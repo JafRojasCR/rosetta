@@ -1,0 +1,108 @@
+const Class = require('../models/Class');
+const Payment = require('../models/Payment');
+const { success, error } = require('../utils/apiResponse');
+const Joi = require('joi');
+
+// GET /api/classes
+const getClasses = async (req, res) => {
+  try {
+    const { subjectId, isPublic } = req.query;
+    const filter = {};
+    if (subjectId) filter['subject.subjectId'] = subjectId;
+    if (isPublic !== undefined) filter.isPublic = isPublic === 'true';
+
+    const classes = await Class.find(filter).sort({ date: -1 });
+    return success(res, classes);
+  } catch (err) {
+    return error(res, err.message);
+  }
+};
+
+// GET /api/classes/:classCode
+const getClassByCode = async (req, res) => {
+  try {
+    const cls = await Class.findOne({ classCode: req.params.classCode });
+    if (!cls) return error(res, 'Clase no encontrada.', 404);
+
+    // Si hay un usuario autenticado, verificar si pagó
+    let hasPaid = false;
+    if (req.user) {
+      const payment = await Payment.findOne({
+        studentEmail: req.user.email,
+        classCode: cls.classCode,
+        status: 'aprobado',
+      });
+      hasPaid = !!payment;
+    }
+
+    const classData = cls.toObject();
+    if (!hasPaid && !cls.isPublic) {
+      classData.recordingUrl = null;
+      classData.canvaUrl = null;
+    }
+
+    return success(res, { ...classData, hasPaid });
+  } catch (err) {
+    return error(res, err.message);
+  }
+};
+
+// POST /api/classes (admin)
+const createClass = async (req, res) => {
+  const schema = Joi.object({
+    classCode: Joi.string().required(),
+    title: Joi.string().required(),
+    description: Joi.string().allow('').optional(),
+    date: Joi.date().required(),
+    isPublic: Joi.boolean().default(false),
+    price: Joi.number().min(0).required(),
+    recordingUrl: Joi.string().uri().allow(null, '').optional(),
+    canvaUrl: Joi.string().uri().allow(null, '').optional(),
+    subject: Joi.object({
+      subjectId: Joi.string().required(),
+      name: Joi.string().required(),
+    }).required(),
+    tutoredEmail: Joi.string().email().allow(null, '').optional(),
+  });
+
+  const { error: validationError, value } = schema.validate(req.body);
+  if (validationError) return error(res, validationError.details[0].message, 400);
+
+  try {
+    const existing = await Class.findOne({ classCode: value.classCode });
+    if (existing) return error(res, 'Ya existe una clase con ese código.', 409);
+
+    const cls = await Class.create(value);
+    return success(res, cls, 'Clase creada exitosamente', 201);
+  } catch (err) {
+    return error(res, err.message);
+  }
+};
+
+// PUT /api/classes/:classCode (admin)
+const updateClass = async (req, res) => {
+  try {
+    const cls = await Class.findOneAndUpdate(
+      { classCode: req.params.classCode },
+      req.body,
+      { new: true, runValidators: true }
+    );
+    if (!cls) return error(res, 'Clase no encontrada.', 404);
+    return success(res, cls, 'Clase actualizada exitosamente');
+  } catch (err) {
+    return error(res, err.message);
+  }
+};
+
+// DELETE /api/classes/:classCode (admin)
+const deleteClass = async (req, res) => {
+  try {
+    const cls = await Class.findOneAndDelete({ classCode: req.params.classCode });
+    if (!cls) return error(res, 'Clase no encontrada.', 404);
+    return success(res, null, 'Clase eliminada exitosamente');
+  } catch (err) {
+    return error(res, err.message);
+  }
+};
+
+module.exports = { getClasses, getClassByCode, createClass, updateClass, deleteClass };
