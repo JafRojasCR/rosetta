@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const Student = require('../models/Student');
 const Admin = require('../models/Admin');
 const { jwtSecret, jwtExpiresIn } = require('../config/env');
@@ -101,7 +102,18 @@ const verify2FA = async (req, res) => {
     const student = await Student.findOne({ email });
     if (!student) return error(res, 'Usuario no encontrado.', 404);
 
-    if (student.twoFactorCode !== code || new Date() > student.twoFactorExpiry) {
+    if (!student.twoFactorCode || new Date() > student.twoFactorExpiry) {
+      return error(res, 'Código inválido o expirado.', 400);
+    }
+
+    // Constant-time comparison to prevent timing attacks
+    const storedBuffer = Buffer.from(student.twoFactorCode, 'utf8');
+    const inputBuffer = Buffer.from(code, 'utf8');
+    const codesMatch =
+      storedBuffer.length === inputBuffer.length &&
+      crypto.timingSafeEqual(storedBuffer, inputBuffer);
+
+    if (!codesMatch) {
       return error(res, 'Código inválido o expirado.', 400);
     }
 

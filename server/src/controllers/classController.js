@@ -81,10 +81,28 @@ const createClass = async (req, res) => {
 
 // PUT /api/classes/:classCode (admin)
 const updateClass = async (req, res) => {
+  const schema = Joi.object({
+    title: Joi.string().optional(),
+    description: Joi.string().allow('').optional(),
+    date: Joi.date().optional(),
+    isPublic: Joi.boolean().optional(),
+    price: Joi.number().min(0).optional(),
+    recordingUrl: Joi.string().uri().allow(null, '').optional(),
+    canvaUrl: Joi.string().uri().allow(null, '').optional(),
+    subject: Joi.object({
+      subjectId: Joi.string().required(),
+      name: Joi.string().required(),
+    }).optional(),
+    tutoredEmail: Joi.string().email().allow(null, '').optional(),
+  });
+
+  const { error: validationError, value } = schema.validate(req.body);
+  if (validationError) return error(res, validationError.details[0].message, 400);
+
   try {
     const cls = await Class.findOneAndUpdate(
       { classCode: req.params.classCode },
-      req.body,
+      value,
       { new: true, runValidators: true }
     );
     if (!cls) return error(res, 'Clase no encontrada.', 404);

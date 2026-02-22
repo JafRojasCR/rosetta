@@ -61,10 +61,22 @@ const createDocument = async (req, res) => {
 
 // PUT /api/documents/:docId (admin)
 const updateDocument = async (req, res) => {
+  const schema = Joi.object({
+    title: Joi.string().optional(),
+    description: Joi.string().allow('').optional(),
+    subject: Joi.object({
+      subjectId: Joi.string().required(),
+      name: Joi.string().required(),
+    }).optional(),
+  });
+
+  const { error: validationError, value } = schema.validate(req.body);
+  if (validationError) return error(res, validationError.details[0].message, 400);
+
   try {
     const doc = await Document.findOneAndUpdate(
       { docId: req.params.docId },
-      req.body,
+      value,
       { new: true, runValidators: true }
     );
     if (!doc) return error(res, 'Documento no encontrado.', 404);

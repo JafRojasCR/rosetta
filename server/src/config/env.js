@@ -7,6 +7,10 @@ if (nodeEnv === 'production' && !process.env.JWT_SECRET) {
   process.exit(1);
 }
 
+// Sanitize uploadDir to prevent path traversal: only allow relative paths with safe characters
+const rawUploadDir = process.env.UPLOAD_DIR || 'uploads';
+const uploadDir = rawUploadDir.replace(/[^a-zA-Z0-9_\-/]/g, '').replace(/^\/+/, '') || 'uploads';
+
 module.exports = {
   port: process.env.PORT || 3000,
   mongodbUri: process.env.MONGODB_URI || 'mongodb://localhost:27017/rosetta',
@@ -15,5 +19,5 @@ module.exports = {
   nodeEnv,
   emailUser: process.env.EMAIL_USER || '',
   emailPass: process.env.EMAIL_PASS || '',
-  uploadDir: process.env.UPLOAD_DIR || 'uploads',
+  uploadDir,
 };
