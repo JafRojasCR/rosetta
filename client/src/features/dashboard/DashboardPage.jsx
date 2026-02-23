@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import useAuth from '../../hooks/useAuth';
 
@@ -16,6 +17,12 @@ const DashboardCard = ({ to, icon, title, description, color }) => (
 
 const DashboardPage = () => {
   const { user } = useAuth();
+  const [isVisible, setIsVisible] = useState(false);
+
+  useEffect(() => {
+    const id = setTimeout(() => setIsVisible(true), 30);
+    return () => clearTimeout(id);
+  }, []);
 
   const cards = [
     {
@@ -49,7 +56,7 @@ const DashboardPage = () => {
   ];
 
   return (
-    <div>
+    <div className={`transition-all duration-700 ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'}`}>
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900">
           ¡Bienvenido, {user?.name}! 👋

@@ -56,10 +56,10 @@ const login = async (req, res) => {
       user = await Student.findOne({ email: value.email });
     }
 
-    if (!user) return error(res, 'Credenciales incorrectas.', 401);
+    if (!user) return error(res, 'Credenciales incorrectas.', 401, { code: 'INVALID_CREDENTIALS' });
 
     const isMatch = await user.comparePassword(value.password);
-    if (!isMatch) return error(res, 'Credenciales incorrectas.', 401);
+    if (!isMatch) return error(res, 'Credenciales incorrectas.', 401, { code: 'INVALID_CREDENTIALS' });
 
     const token = generateToken({ id: user._id, email: user.email, role: value.role });
 
