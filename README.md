@@ -105,7 +105,48 @@ Esto inicia:
 
 1. Conecta tu repositorio a Vercel
 2. Configura las variables de entorno en el panel de Vercel
-3. Vercel detectará automáticamente la configuración en `vercel.json`
+3. Este proyecto usa configuración explícita en `vercel.json`:
+
+```json
+{
+	"buildCommand": "npm run build",
+	"devCommand": "npm run dev",
+	"outputDirectory": "client/dist",
+	"framework": "vite",
+	"rewrites": [
+		{
+			"source": "/api/(.*)",
+			"destination": "/api/index.js"
+		}
+	]
+}
+```
+
+4. La entrada serverless para el backend es `api/index.js`, que carga `server/src/app`.
+
+### ⚙️ Project Settings en Vercel
+
+Si `vercel.json` está en la raíz, **no necesitas** configurar manualmente Build Command, Dev Command, Framework ni Output Directory en el panel: Vercel tomará esos valores del archivo.
+
+Opcionalmente, puedes dejarlos iguales en UI:
+
+- **Framework Preset**: `Vite`
+- **Build Command**: `npm run build`
+- **Dev Command**: `npm run dev`
+- **Output Directory**: `client/dist`
+- **Install Command**: dejar por defecto (`npm install`) o definirlo explícitamente como `npm install`
+- **Root Directory**: raíz del repositorio (`rosetta`)
+
+### 🔐 Variables de entorno en Vercel
+
+Mínimas recomendadas para producción:
+
+- `MONGODB_URI`
+- `JWT_SECRET` (obligatoria en producción)
+- `JWT_EXPIRES_IN` (opcional, por ejemplo `7d`)
+- `EMAIL_USER` y `EMAIL_PASS` (si usas envío de correos)
+- `UPLOAD_DIR` (opcional; por defecto `uploads`)
+- `VITE_API_URL` (opcional; para este setup puede omitirse y usar `/api`)
 
 ```bash
 # Instalar Vercel CLI

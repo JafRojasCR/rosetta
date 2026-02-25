@@ -1,18 +1,12 @@
 {
-  "installCommand": "npm install",
-  "buildCommand": "npm run build --workspace=client",
+  "buildCommand": "npm run build",
+  "devCommand": "npm run dev",
   "outputDirectory": "client/dist",
-  "routes": [
+  "framework": "vite",
+  "rewrites": [
     {
-      "src": "/api/(.*)",
-      "dest": "/api/[[...path]].js"
-    },
-    {
-      "handle": "filesystem"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/index.html"
+      "source": "/api/(.*)",
+      "destination": "/api/index.js"
     }
   ]
 }
