@@ -12,7 +12,11 @@ const app = express();
 // Crear directorio de uploads si no existe
 const uploadsPath = path.join(__dirname, '..', uploadDir);
 if (!fs.existsSync(uploadsPath)) {
-  fs.mkdirSync(uploadsPath, { recursive: true });
+  try {
+    fs.mkdirSync(uploadsPath, { recursive: true });
+  } catch (mkdirError) {
+    console.error(`No se pudo crear directorio de uploads (${uploadsPath}):`, mkdirError.message);
+  }
 }
 
 // Middlewares globales
