@@ -5,7 +5,7 @@ import useAuth from '../../hooks/useAuth';
 import logo from '/logo.png';
 
 const LoginPage = () => {
-  const { login, user, loading } = useAuth();
+  const { login } = useAuth();
   const navigate = useNavigate();
 
   const [email, setEmail] = useState('');
@@ -23,12 +23,6 @@ const LoginPage = () => {
     const id = setTimeout(() => setIsVisible(true), 20);
     return () => clearTimeout(id);
   }, []);
-
-  useEffect(() => {
-    if (!loading && user) {
-      navigate('/dashboard', { replace: true });
-    }
-  }, [loading, user, navigate]);
 
   const handleNavigate = (path) => {
     if (isSwitching) return;
