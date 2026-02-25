@@ -207,9 +207,7 @@ const RegisterPage = () => {
         </div>
       )}
 
-      <div className="mt-8 text-sm text-gray-400 text-center animate-in slide-in-from-bottom-4 duration-1000">
-        Copyright Jafet A. Rojas Bello - 2026
-      </div>
+   
     </div>
   );
 };

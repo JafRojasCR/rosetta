@@ -172,9 +172,7 @@ const LoginPage = () => {
         </div>
       </div>
 
-      <div className="mt-8 text-sm text-gray-400 text-center animate-slide-up opacity-0">
-        Copyright Jafet A. Rojas Bello - 2026
-      </div>
+      
     </div>
   );
 };
