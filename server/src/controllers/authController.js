@@ -25,8 +25,11 @@ const register = async (req, res) => {
   if (validationError) return error(res, validationError.details[0].message, 400);
 
   try {
-    const exists = await Student.findOne({ email: value.email });
-    if (exists) return error(res, 'El correo ya está registrado.', 409);
+    const [existsStudent, existsAdmin] = await Promise.all([
+      Student.findOne({ email: value.email }),
+      Admin.findOne({ email: value.email }),
+    ]);
+    if (existsStudent || existsAdmin) return error(res, 'El correo ya está registrado.', 409);
 
     const student = await Student.create(value);
     const token = generateToken({ id: student._id, email: student.email, role: 'student' });
@@ -42,18 +45,17 @@ const login = async (req, res) => {
   const schema = Joi.object({
     email: Joi.string().email().required(),
     password: Joi.string().required(),
-    role: Joi.string().valid('student', 'admin').default('student'),
   });
 
   const { error: validationError, value } = schema.validate(req.body);
   if (validationError) return error(res, validationError.details[0].message, 400);
 
   try {
-    let user;
-    if (value.role === 'admin') {
+    let resolvedRole = 'student';
+    let user = await Student.findOne({ email: value.email });
+    if (!user) {
       user = await Admin.findOne({ email: value.email });
-    } else {
-      user = await Student.findOne({ email: value.email });
+      resolvedRole = 'admin';
     }
 
     if (!user) return error(res, 'Credenciales incorrectas.', 401, { code: 'INVALID_CREDENTIALS' });
@@ -61,9 +63,9 @@ const login = async (req, res) => {
     const isMatch = await user.comparePassword(value.password);
     if (!isMatch) return error(res, 'Credenciales incorrectas.', 401, { code: 'INVALID_CREDENTIALS' });
 
-    const token = generateToken({ id: user._id, email: user.email, role: value.role });
+    const token = generateToken({ id: user._id, email: user.email, role: resolvedRole });
 
-    return success(res, { user, token }, 'Inicio de sesión exitoso');
+    return success(res, { user, token, role: resolvedRole }, 'Inicio de sesión exitoso');
   } catch (err) {
     return error(res, err.message);
   }

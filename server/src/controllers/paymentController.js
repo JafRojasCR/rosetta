@@ -1,5 +1,6 @@
 const Payment = require('../models/Payment');
 const Class = require('../models/Class');
+const Student = require('../models/Student');
 const { success, error } = require('../utils/apiResponse');
 const { extractPaymentData, validatePayment } = require('../services/paymentAIService');
 const Joi = require('joi');
@@ -75,12 +76,48 @@ const updatePaymentStatus = async (req, res) => {
   }
 
   try {
-    const payment = await Payment.findOneAndUpdate(
-      { paymentId: req.params.paymentId },
-      { status },
-      { new: true }
-    );
+    const payment = await Payment.findOne({ paymentId: req.params.paymentId });
     if (!payment) return error(res, 'Pago no encontrado.', 404);
+
+    payment.status = status;
+    await payment.save();
+
+    if (status === 'aprobado') {
+      const [cls, student] = await Promise.all([
+        Class.findOne({ classCode: payment.classCode }),
+        Student.findOne({ email: payment.studentEmail }),
+      ]);
+
+      if (cls && student) {
+        if (!Array.isArray(cls.classStudents)) {
+          cls.classStudents = [];
+        }
+
+        const existingIndex = cls.classStudents.findIndex(
+          (entry) => entry.student?.email?.toLowerCase() === payment.studentEmail.toLowerCase()
+        );
+
+        const studentEntry = {
+          student: {
+            id: student._id,
+            email: student.email,
+            name: student.name,
+            lastName: student.lastName,
+            phone: student.phone || '',
+          },
+          paymentDate: payment.date || new Date(),
+        };
+
+        if (existingIndex >= 0) {
+          cls.classStudents[existingIndex] = studentEntry;
+        } else {
+          cls.classStudents.push(studentEntry);
+        }
+
+        await cls.save();
+      }
+    }
+
     return success(res, payment, 'Estado de pago actualizado');
   } catch (err) {
     return error(res, err.message);

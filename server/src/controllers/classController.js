@@ -62,7 +62,7 @@ const createClass = async (req, res) => {
       subjectId: Joi.string().required(),
       name: Joi.string().required(),
     }).required(),
-    tutoredEmail: Joi.string().email().allow(null, '').optional(),
+    adminEmail: Joi.string().email().optional(),
   });
 
   const { error: validationError, value } = schema.validate(req.body);
@@ -72,7 +72,10 @@ const createClass = async (req, res) => {
     const existing = await Class.findOne({ classCode: value.classCode });
     if (existing) return error(res, 'Ya existe una clase con ese código.', 409);
 
-    const cls = await Class.create(value);
+    const cls = await Class.create({
+      ...value,
+      adminEmail: value.adminEmail || req.user.email,
+    });
     return success(res, cls, 'Clase creada exitosamente', 201);
   } catch (err) {
     return error(res, err.message);
@@ -93,7 +96,7 @@ const updateClass = async (req, res) => {
       subjectId: Joi.string().required(),
       name: Joi.string().required(),
     }).optional(),
-    tutoredEmail: Joi.string().email().allow(null, '').optional(),
+    adminEmail: Joi.string().email().optional(),
   });
 
   const { error: validationError, value } = schema.validate(req.body);

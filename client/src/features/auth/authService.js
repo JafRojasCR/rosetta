@@ -1,7 +1,7 @@
 import api from '../../services/api';
 
-export const loginService = (email, password, role) =>
-  api.post('/auth/login', { email, password, role });
+export const loginService = (email, password) =>
+  api.post('/auth/login', { email, password });
 
 export const registerService = (data) => api.post('/auth/register', data);
 

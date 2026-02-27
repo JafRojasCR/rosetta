@@ -14,7 +14,7 @@ const LoginPage = () => {
   const [errorMessage, setErrorMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
-  const [userRole, setUserRole] = useState('student');
+  const [authenticatedRole, setAuthenticatedRole] = useState('student');
   const [isVisible, setIsVisible] = useState(false);
   const [isSwitching, setIsSwitching] = useState(false);
   const [highlightError, setHighlightError] = useState(false);
@@ -38,7 +38,8 @@ const LoginPage = () => {
     setErrorMessage('');
 
     try {
-      await login(email, password, userRole);
+      const { role } = await login(email, password);
+      setAuthenticatedRole(role || 'student');
       setIsSuccess(true);
       // navigation is triggered by onAnimationEnd on the card
     } catch (err) {
@@ -71,7 +72,7 @@ const LoginPage = () => {
 
       <div
         onAnimationEnd={() => {
-          if (isSuccess) navigate(userRole === 'admin' ? '/admin' : '/dashboard');
+          if (isSuccess) navigate(authenticatedRole === 'admin' ? '/admin' : '/dashboard');
         }}
         style={isSuccess ? { animation: 'loginFall 1.05s forwards' } : {}}
         className={`bg-white p-8 md:p-12 rounded-[2.5rem] shadow-xl w-full max-w-[420px] text-center ${
@@ -126,17 +127,6 @@ const LoginPage = () => {
             >
               {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
             </button>
-          </div>
-
-          <div className="relative transition-all duration-500">
-            <select
-              value={userRole}
-              onChange={(e) => setUserRole(e.target.value)}
-              className="w-full p-4 bg-gray-100 rounded-2xl outline-none border-2 transition-colors duration-500 border-transparent focus:border-blue-500 focus:bg-white focus:shadow-lg focus:shadow-blue-100"
-            >
-              <option value="student">Estudiante</option>
-              <option value="admin">Administrador</option>
-            </select>
           </div>
 
           {errorMessage && (
