@@ -43,6 +43,16 @@ const DashboardPage = () => {
     return () => cancelAnimationFrame(id);
   }, []);
 
+  useEffect(() => {
+    document.documentElement.classList.add('dashboard-no-scrollbar');
+    document.body.classList.add('dashboard-no-scrollbar');
+
+    return () => {
+      document.documentElement.classList.remove('dashboard-no-scrollbar');
+      document.body.classList.remove('dashboard-no-scrollbar');
+    };
+  }, []);
+
   const handleLogout = () => {
     logout();
     navigate('/login');
