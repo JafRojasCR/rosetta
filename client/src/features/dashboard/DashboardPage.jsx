@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { BookOpen, CreditCard, FileText, User, LogOut } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import useAuth from '../../hooks/useAuth';
@@ -35,6 +36,12 @@ const cards = [
 const DashboardPage = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const [isVisible, setIsVisible] = useState(false);
+
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setIsVisible(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
 
   const handleLogout = () => {
     logout();
@@ -42,7 +49,11 @@ const DashboardPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 font-['Poppins'] flex flex-col overflow-hidden">
+    <div
+      className={`min-h-screen bg-gray-100 font-['Poppins'] flex flex-col overflow-hidden transform transition-all duration-700 ease-out ${
+        isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
+      }`}
+    >
       <style>
         {`@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap');`}
       </style>
