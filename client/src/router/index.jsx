@@ -39,9 +39,7 @@ const AppRouter = () => {
         path="/dashboard"
         element={
           <ProtectedRoute>
-            <MainLayout>
-              <DashboardPage />
-            </MainLayout>
+            <DashboardPage />
           </ProtectedRoute>
         }
       />
