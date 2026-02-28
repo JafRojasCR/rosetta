@@ -182,10 +182,14 @@ const ProfilePage = () => {
 
   return (
     <div
-      className={`w-full bg-gray-100 rounded-3xl overflow-x-hidden transition-opacity duration-500 ease-out ${
+      className={`w-full bg-gray-100 font-['Poppins'] rounded-3xl overflow-x-hidden transition-opacity duration-500 ease-out ${
         isVisible ? 'opacity-100' : 'opacity-0'
       }`}
     >
+      <style>
+        {`@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap');`}
+      </style>
+
       <nav className="bg-white px-4 sm:px-8 py-4 flex items-center justify-between gap-3 shadow-sm z-10">
         <div className="flex items-center gap-4">
           <button
@@ -210,15 +214,15 @@ const ProfilePage = () => {
 
       <div className="flex-grow flex flex-col items-center px-4 sm:px-6 py-10">
         <div className="max-w-3xl w-full space-y-8">
-          <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-gray-100 flex flex-row items-center gap-6">
-            <div className="w-24 h-24 bg-blue-50 rounded-[2rem] flex items-center justify-center text-blue-600 flex-shrink-0">
-              <User size={48} strokeWidth={2.5} />
+          <div className="bg-white rounded-[2.5rem] p-6 sm:p-8 shadow-sm border border-gray-100 flex flex-row items-center gap-4 sm:gap-6">
+            <div className="w-16 h-16 sm:w-24 sm:h-24 bg-blue-50 rounded-2xl sm:rounded-[2rem] flex items-center justify-center text-blue-600 flex-shrink-0">
+              <User className="w-8 h-8 sm:w-12 sm:h-12" strokeWidth={2.5} />
             </div>
             <div className="text-left min-w-0">
-              <h2 className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight truncate">
+              <h2 className="text-xl sm:text-3xl font-black text-gray-900 tracking-tight truncate">
                 {form.name} {form.lastName}
               </h2>
-              <div className="mt-2 inline-flex items-center bg-blue-600 text-white font-black text-xs tracking-widest uppercase px-5 py-1.5 rounded-full shadow-lg shadow-blue-100">
+              <div className="mt-2 inline-flex items-center bg-blue-600 text-white font-black text-[10px] sm:text-xs tracking-widest uppercase px-3 sm:px-5 py-1 sm:py-1.5 rounded-full shadow-lg shadow-blue-100">
                 {roleLabel}
               </div>
             </div>
