@@ -10,12 +10,19 @@ const Joi = require('joi');
 const generateToken = (payload) => jwt.sign(payload, jwtSecret, { expiresIn: jwtExpiresIn });
 
 const generateCode = () => Math.floor(100000 + Math.random() * 900000).toString();
+const strongPasswordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
 
 // POST /api/auth/register
 const register = async (req, res) => {
   const schema = Joi.object({
     email: Joi.string().email().required(),
-    password: Joi.string().min(6).required(),
+    password: Joi.string()
+      .pattern(strongPasswordRegex)
+      .required()
+      .messages({
+        'string.pattern.base':
+          'La contraseña debe tener al menos 8 caracteres e incluir mayúscula, minúscula y número.',
+      }),
     name: Joi.string().required(),
     lastName: Joi.string().required(),
     phone: Joi.string().allow('').optional(),
@@ -147,4 +154,47 @@ const getMe = async (req, res) => {
   }
 };
 
-module.exports = { register, login, send2FA, verify2FA, getMe };
+// PUT /api/auth/change-password
+const changePassword = async (req, res) => {
+  const schema = Joi.object({
+    newPassword: Joi.string()
+      .pattern(strongPasswordRegex)
+      .required()
+      .messages({
+        'string.pattern.base':
+          'La contraseña debe tener al menos 8 caracteres e incluir mayúscula, minúscula y número.',
+      }),
+    currentPassword: Joi.string().allow('').optional(),
+  });
+
+  const { error: validationError, value } = schema.validate(req.body);
+  if (validationError) return error(res, validationError.details[0].message, 400);
+
+  try {
+    let account;
+
+    if (req.user.role === 'admin') {
+      account = await Admin.findById(req.user.id);
+    } else {
+      account = await Student.findById(req.user.id);
+    }
+
+    if (!account) return error(res, 'Usuario no encontrado.', 404);
+
+    if (value.currentPassword) {
+      const isCurrentValid = await account.comparePassword(value.currentPassword);
+      if (!isCurrentValid) {
+        return error(res, 'La contraseña actual no es correcta.', 400);
+      }
+    }
+
+    account.password = value.newPassword;
+    await account.save();
+
+    return success(res, null, 'Contraseña actualizada');
+  } catch (err) {
+    return error(res, err.message);
+  }
+};
+
+module.exports = { register, login, send2FA, verify2FA, getMe, changePassword };

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, Info } from 'lucide-react';
 import useAuth from '../../hooks/useAuth';
 import logo from '/logo.png';
 
@@ -21,6 +21,10 @@ const RegisterPage = () => {
   const [isSuccess, setIsSuccess] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
   const [isSwitching, setIsSwitching] = useState(false);
+  const [showPasswordGuidelines, setShowPasswordGuidelines] = useState(false);
+
+  const isPasswordStrong = (password) =>
+    /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/.test(password);
 
   const handleChange = (event) => {
     setForm({ ...form, [event.target.name]: event.target.value });
@@ -31,6 +35,34 @@ const RegisterPage = () => {
     setIsLoading(true);
     setError(false);
     setErrorMessage('');
+
+    const trimmedName = form.name.trim();
+    const trimmedLastName = form.lastName.trim();
+    const trimmedEmail = form.email.trim();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!trimmedName || !trimmedLastName || !trimmedEmail || !form.password) {
+      setError(true);
+      setErrorMessage('Completa todos los campos obligatorios: nombre, apellido, correo y contraseña.');
+      setIsLoading(false);
+      return;
+    }
+
+    if (!emailRegex.test(trimmedEmail)) {
+      setError(true);
+      setErrorMessage('Ingresa un correo electrónico válido.');
+      setIsLoading(false);
+      return;
+    }
+
+    if (!isPasswordStrong(form.password)) {
+      setError(true);
+      setErrorMessage(
+        'La contraseña debe tener al menos 8 caracteres, incluir mayúscula, minúscula y número.'
+      );
+      setIsLoading(false);
+      return;
+    }
 
     try {
       await register(form);
@@ -92,7 +124,7 @@ const RegisterPage = () => {
 
         <h2 className="text-2xl font-bold text-gray-800 mb-6">Crear Cuenta</h2>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           <div className="grid grid-cols-2 gap-3">
             <div className={`relative transition-all duration-300 ${error ? 'animate-shake' : ''}`}>
               <input
@@ -104,7 +136,6 @@ const RegisterPage = () => {
                 className={`w-full p-4 bg-gray-100 rounded-2xl outline-none border-2 transition-all duration-300 placeholder:text-gray-400 ${
                   error ? 'border-red-400' : 'border-transparent focus:border-blue-500 focus:bg-white focus:shadow-lg focus:shadow-blue-100'
                 }`}
-                required
               />
             </div>
             <div className={`relative transition-all duration-300 ${error ? 'animate-shake' : ''}`}>
@@ -117,7 +148,6 @@ const RegisterPage = () => {
                 className={`w-full p-4 bg-gray-100 rounded-2xl outline-none border-2 transition-all duration-300 placeholder:text-gray-400 ${
                   error ? 'border-red-400' : 'border-transparent focus:border-blue-500 focus:bg-white focus:shadow-lg focus:shadow-blue-100'
                 }`}
-                required
               />
             </div>
           </div>
@@ -132,7 +162,6 @@ const RegisterPage = () => {
               className={`w-full p-4 bg-gray-100 rounded-2xl outline-none border-2 transition-all duration-300 placeholder:text-gray-400 ${
                 error ? 'border-red-400' : 'border-transparent focus:border-blue-500 focus:bg-white focus:shadow-lg focus:shadow-blue-100'
               }`}
-              required
             />
           </div>
 
@@ -156,11 +185,11 @@ const RegisterPage = () => {
               value={form.password}
               onChange={handleChange}
               placeholder="Contraseña..."
-              minLength={6}
+              onFocus={() => setShowPasswordGuidelines(true)}
+              onBlur={() => setShowPasswordGuidelines(false)}
               className={`w-full p-4 bg-gray-100 rounded-2xl outline-none border-2 transition-all duration-300 placeholder:text-gray-400 ${
                 error ? 'border-red-400' : 'border-transparent focus:border-blue-500 focus:bg-white focus:shadow-lg focus:shadow-blue-100'
               }`}
-              required
             />
             <button
               type="button"
@@ -169,6 +198,26 @@ const RegisterPage = () => {
             >
               {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
             </button>
+          </div>
+
+          <div
+            className={`text-left bg-blue-50/70 border border-blue-100 rounded-2xl px-4 text-sm text-blue-900 overflow-hidden transform transition-all duration-200 ${
+              showPasswordGuidelines
+                ? 'max-h-56 py-3 opacity-100 translate-y-0'
+                : 'max-h-0 py-0 opacity-0 -translate-y-1 pointer-events-none'
+            }`}
+          >
+            <div>
+              <p className="font-semibold flex items-center gap-2 mb-1">
+                <Info size={16} className="text-blue-600" />
+                Recomendaciones de contraseña
+              </p>
+              <ul className="space-y-1 text-blue-900/90">
+                <li>• La contraseña debe tener al menos 8 caracteres.</li>
+                <li>• Debe incluir al menos una letra mayúscula, una minúscula y un número.</li>
+                <li>• Se recomienda agregar símbolos para reforzar la seguridad.</li>
+              </ul>
+            </div>
           </div>
 
           {error && (
