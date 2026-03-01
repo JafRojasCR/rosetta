@@ -5,6 +5,9 @@ import AuthLayout from '../layouts/AuthLayout';
 
 import LoginPage from '../features/auth/LoginPage';
 import RegisterPage from '../features/auth/RegisterPage';
+import TwoFactorPage from '../features/auth/TwoFactorPage';
+import ForgotPasswordPage from '../features/auth/ForgotPasswordPage';
+import RecoverPasswordPage from '../features/auth/RecoverPasswordPage';
 import DashboardPage from '../features/dashboard/DashboardPage';
 import ClassesPage from '../features/classes/ClassesPage';
 import ClassDetailPage from '../features/classes/ClassDetailPage';
@@ -37,6 +40,30 @@ const AppRouter = () => {
         element={
           <AuthLayout>
             <RegisterPage />
+          </AuthLayout>
+        }
+      />
+      <Route
+        path="/verificacion-2fa"
+        element={
+          <AuthLayout>
+            <TwoFactorPage />
+          </AuthLayout>
+        }
+      />
+      <Route
+        path="/forgot-password"
+        element={
+          <AuthLayout>
+            <ForgotPasswordPage />
+          </AuthLayout>
+        }
+      />
+      <Route
+        path="/recoverPassword"
+        element={
+          <AuthLayout>
+            <RecoverPasswordPage />
           </AuthLayout>
         }
       />

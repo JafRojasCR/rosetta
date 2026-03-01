@@ -138,10 +138,8 @@ const AdminUsersPage = () => {
             />
           </div>
 
-          <div className="mt-4 flex items-center justify-between gap-3 text-xs sm:text-sm">
-            <span className="font-black text-indigo-600 uppercase tracking-widest">
-              Estudiantes
-            </span>
+          <div className="mt-4 flex items-center gap-2 text-xs sm:text-sm">
+            <span className="font-black text-indigo-600 uppercase tracking-widest">Estudiantes</span>
             <span className="bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full font-black">
               {filteredStudents.length}
             </span>

@@ -25,9 +25,18 @@ module.exports = {
   mongodbUri: process.env.MONGODB_URI || 'mongodb://localhost:27017/rosetta',
   jwtSecret: process.env.JWT_SECRET || 'rosetta_dev_secret',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
+  appBaseUrl: process.env.APP_BASE_URL || 'https://rosetta.jafrojas.com',
   nodeEnv,
+  emailEnabled:
+    process.env.EMAIL_ENABLED === '1' ||
+    process.env.EMAIL_ENABLED === 'true' ||
+    process.env.EMAIL_ENABLED === 'yes',
   emailUser: process.env.EMAIL_USER || '',
   emailPass: process.env.EMAIL_PASS || '',
+  emailFrom: process.env.EMAIL_FROM || process.env.EMAIL_USER || '',
+  emailClientId: process.env.EMAIL_CLIENT_ID || '',
+  emailClientSecret: process.env.EMAIL_CLIENT_SECRET || '',
+  emailRefreshToken: process.env.EMAIL_REFRESH_TOKEN || '',
   uploadDir,
   classUploadMaxFileSizeMb,
   isVercel,
@@ -40,5 +49,5 @@ module.exports = {
   googleDriveRefreshToken: process.env.GOOGLE_DRIVE_REFRESH_TOKEN || '',
   googleDriveFolderId: process.env.GOOGLE_DRIVE_FOLDER_ID || '',
   googleDriveClassesVideosFolderId:
-    process.env.GOOGLE_DRIVE_CLASSES_VIDEOS_FOLDER_ID || '16GFwAhMJ1TpPH0hcUQWmp9v6MkBDV5lW',
+    process.env.GOOGLE_DRIVE_CLASSES_VIDEOS_FOLDER_ID || '',
 };

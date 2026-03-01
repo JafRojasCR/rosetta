@@ -14,7 +14,7 @@ const LoginPage = () => {
   const [errorMessage, setErrorMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
-  const [authenticatedRole, setAuthenticatedRole] = useState('student');
+  const [nextPath, setNextPath] = useState('/dashboard');
   const [isVisible, setIsVisible] = useState(false);
   const [isSwitching, setIsSwitching] = useState(false);
   const [highlightError, setHighlightError] = useState(false);
@@ -38,8 +38,8 @@ const LoginPage = () => {
     setErrorMessage('');
 
     try {
-      const { role } = await login(email, password);
-      setAuthenticatedRole(role || 'student');
+      const response = await login(email, password);
+      setNextPath(response?.requiresTwoFactor ? '/verificacion-2fa' : '/dashboard');
       setIsSuccess(true);
       // navigation is triggered by onAnimationEnd on the card
     } catch (err) {
@@ -72,7 +72,7 @@ const LoginPage = () => {
 
       <div
         onAnimationEnd={() => {
-          if (isSuccess) navigate('/dashboard');
+          if (isSuccess) navigate(nextPath);
         }}
         style={isSuccess ? { animation: 'loginFall 1.05s forwards' } : {}}
         className={`bg-white p-8 md:p-12 rounded-[2.5rem] shadow-xl w-full max-w-[420px] text-center ${
@@ -134,7 +134,11 @@ const LoginPage = () => {
           )}
 
           <div className="text-left">
-            <button type="button" className="text-xs text-gray-500 hover:text-blue-500 transition-colors ml-1">
+            <button
+              type="button"
+              onClick={() => handleNavigate('/forgot-password')}
+              className="text-xs text-gray-500 hover:text-blue-500 transition-colors ml-1"
+            >
               Olvidé mi contraseña...
             </button>
           </div>

@@ -2,15 +2,98 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const Student = require('../models/Student');
 const Admin = require('../models/Admin');
-const { jwtSecret, jwtExpiresIn } = require('../config/env');
+const AuthVerificationToken = require('../models/AuthVerificationToken');
+const { appBaseUrl, jwtSecret, jwtExpiresIn } = require('../config/env');
 const { success, error } = require('../utils/apiResponse');
-const { send2FACode } = require('../services/emailService');
+const { send2FACode, sendPasswordResetLink } = require('../services/emailService');
 const Joi = require('joi');
 
 const generateToken = (payload) => jwt.sign(payload, jwtSecret, { expiresIn: jwtExpiresIn });
+const generateResetToken = (payload) => jwt.sign(payload, jwtSecret, { expiresIn: '15m' });
 
 const generateCode = () => Math.floor(100000 + Math.random() * 900000).toString();
 const strongPasswordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
+const hashValue = (value) => crypto.createHash('sha256').update(String(value)).digest('hex');
+const VERIFICATION_EXPIRY_MS = 10 * 60 * 1000;
+const MAX_OTP_ATTEMPTS = 5;
+
+const findAccountByEmail = async (email) => {
+  const normalizedEmail = String(email || '').toLowerCase();
+
+  let account = await Student.findOne({ email: normalizedEmail });
+  if (account) return { account, role: 'student' };
+
+  account = await Admin.findOne({ email: normalizedEmail });
+  if (account) return { account, role: 'admin' };
+
+  return { account: null, role: null };
+};
+
+const createVerificationRecord = async ({ account, role, purpose }) => {
+  const code = generateCode();
+  const verificationToken = crypto.randomBytes(32).toString('hex');
+  const expiresAt = new Date(Date.now() + VERIFICATION_EXPIRY_MS);
+
+  await AuthVerificationToken.create({
+    tokenHash: hashValue(verificationToken),
+    codeHash: hashValue(code),
+    email: account.email,
+    userId: account._id,
+    role,
+    purpose,
+    expiresAt,
+  });
+
+  if (purpose === 'login_2fa') {
+    await send2FACode(account.email, code);
+  }
+
+  return {
+    verificationToken,
+    expiresInSeconds: Math.floor(VERIFICATION_EXPIRY_MS / 1000),
+  };
+};
+
+const isCodeMatch = (record, code) => {
+  const inputHash = hashValue(code);
+  const storedBuffer = Buffer.from(String(record.codeHash || ''), 'utf8');
+  const inputBuffer = Buffer.from(String(inputHash || ''), 'utf8');
+
+  if (storedBuffer.length !== inputBuffer.length) return false;
+  return crypto.timingSafeEqual(storedBuffer, inputBuffer);
+};
+
+const findRecordByToken = async (verificationToken, purpose) => {
+  return AuthVerificationToken.findOne({
+    tokenHash: hashValue(verificationToken),
+    purpose,
+    consumedAt: null,
+  });
+};
+
+const validateVerificationCode = async (record, code) => {
+  if (!record) return { ok: false, message: 'Solicitud de verificación no válida.' };
+
+  if (record.expiresAt.getTime() < Date.now()) {
+    return { ok: false, message: 'Código expirado. Solicita un nuevo código.' };
+  }
+
+  if (record.attempts >= MAX_OTP_ATTEMPTS) {
+    return { ok: false, message: 'Demasiados intentos. Solicita un nuevo código.' };
+  }
+
+  const matched = isCodeMatch(record, code);
+  if (!matched) {
+    await AuthVerificationToken.updateOne({ _id: record._id }, { $inc: { attempts: 1 } });
+    return { ok: false, message: 'Código inválido o expirado.' };
+  }
+
+  await AuthVerificationToken.updateOne(
+    { _id: record._id },
+    { $set: { consumedAt: new Date() } }
+  );
+  return { ok: true };
+};
 
 // POST /api/auth/register
 const register = async (req, res) => {
@@ -41,7 +124,7 @@ const register = async (req, res) => {
     const student = await Student.create(value);
     const token = generateToken({ id: student._id, email: student.email, role: 'student' });
 
-    return success(res, { student, token }, 'Registro exitoso', 201);
+    return success(res, { user: student, token, role: 'student' }, 'Registro exitoso', 201);
   } catch (err) {
     return error(res, err.message);
   }
@@ -58,43 +141,59 @@ const login = async (req, res) => {
   if (validationError) return error(res, validationError.details[0].message, 400);
 
   try {
-    let resolvedRole = 'student';
-    let user = await Student.findOne({ email: value.email });
-    if (!user) {
-      user = await Admin.findOne({ email: value.email });
-      resolvedRole = 'admin';
-    }
+    const { account: user, role: resolvedRole } = await findAccountByEmail(value.email);
 
     if (!user) return error(res, 'Credenciales incorrectas.', 401, { code: 'INVALID_CREDENTIALS' });
 
     const isMatch = await user.comparePassword(value.password);
     if (!isMatch) return error(res, 'Credenciales incorrectas.', 401, { code: 'INVALID_CREDENTIALS' });
 
-    const token = generateToken({ id: user._id, email: user.email, role: resolvedRole });
+    const { verificationToken, expiresInSeconds } = await createVerificationRecord({
+      account: user,
+      role: resolvedRole,
+      purpose: 'login_2fa',
+    });
 
-    return success(res, { user, token, role: resolvedRole }, 'Inicio de sesión exitoso');
+    return success(
+      res,
+      {
+        requiresTwoFactor: true,
+        verificationToken,
+        email: user.email,
+        role: resolvedRole,
+        expiresIn: expiresInSeconds,
+      },
+      'Código de verificación enviado al correo.'
+    );
   } catch (err) {
     return error(res, err.message);
   }
 };
 
-// POST /api/auth/send-2fa
-const send2FA = async (req, res) => {
-  const { email } = req.body;
-  if (!email) return error(res, 'Correo requerido.', 400);
+// POST /api/auth/resend-2fa
+const resend2FA = async (req, res) => {
+  const schema = Joi.object({
+    verificationToken: Joi.string().required(),
+  });
+
+  const { error: validationError, value } = schema.validate(req.body);
+  if (validationError) return error(res, validationError.details[0].message, 400);
 
   try {
-    const student = await Student.findOne({ email });
-    if (!student) return error(res, 'Usuario no encontrado.', 404);
+    const record = await findRecordByToken(value.verificationToken, 'login_2fa');
+    if (!record) return error(res, 'Solicitud de verificación no válida.', 400);
+
+    if (record.expiresAt.getTime() < Date.now()) {
+      return error(res, 'La solicitud expiró. Inicia sesión nuevamente.', 400);
+    }
 
     const code = generateCode();
-    const expiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutos
+    record.codeHash = hashValue(code);
+    record.attempts = 0;
+    record.expiresAt = new Date(Date.now() + VERIFICATION_EXPIRY_MS);
+    await record.save();
 
-    student.twoFactorCode = code;
-    student.twoFactorExpiry = expiry;
-    await student.save();
-
-    await send2FACode(email, code);
+    await send2FACode(record.email, code);
 
     return success(res, null, 'Código enviado al correo.');
   } catch (err) {
@@ -104,37 +203,140 @@ const send2FA = async (req, res) => {
 
 // POST /api/auth/verify-2fa
 const verify2FA = async (req, res) => {
-  const { email, code } = req.body;
-  if (!email || !code) return error(res, 'Correo y código requeridos.', 400);
+  const schema = Joi.object({
+    verificationToken: Joi.string().required(),
+    code: Joi.string().length(6).required(),
+  });
+
+  const { error: validationError, value } = schema.validate(req.body);
+  if (validationError) return error(res, validationError.details[0].message, 400);
 
   try {
-    const student = await Student.findOne({ email });
-    if (!student) return error(res, 'Usuario no encontrado.', 404);
+    const record = await findRecordByToken(value.verificationToken, 'login_2fa');
+    const validation = await validateVerificationCode(record, value.code);
+    if (!validation.ok) return error(res, validation.message, 400);
 
-    if (!student.twoFactorCode || new Date() > student.twoFactorExpiry) {
-      return error(res, 'Código inválido o expirado.', 400);
+    let user;
+    if (record.role === 'admin') {
+      user = await Admin.findById(record.userId);
+    } else {
+      user = await Student.findById(record.userId);
     }
 
-    // Constant-time comparison to prevent timing attacks
-    const storedBuffer = Buffer.from(student.twoFactorCode, 'utf8');
-    const inputBuffer = Buffer.from(code, 'utf8');
-    const codesMatch =
-      storedBuffer.length === inputBuffer.length &&
-      crypto.timingSafeEqual(storedBuffer, inputBuffer);
-
-    if (!codesMatch) {
-      return error(res, 'Código inválido o expirado.', 400);
+    if (!user || String(user.email || '').toLowerCase() !== String(record.email || '').toLowerCase()) {
+      return error(res, 'Usuario no encontrado.', 404);
     }
 
-    student.twoFactorCode = null;
-    student.twoFactorExpiry = null;
-    await student.save();
+    const token = generateToken({ id: user._id, email: user.email, role: record.role });
 
-    const token = generateToken({ id: student._id, email: student.email, role: 'student' });
-
-    return success(res, { user: student, token }, 'Verificación exitosa');
+    return success(res, { user, token, role: record.role }, 'Verificación exitosa');
   } catch (err) {
     return error(res, err.message);
+  }
+};
+
+// POST /api/auth/forgot-password
+const requestPasswordReset = async (req, res) => {
+  const schema = Joi.object({ email: Joi.string().email().required() });
+
+  const { error: validationError, value } = schema.validate(req.body);
+  if (validationError) return error(res, validationError.details[0].message, 400);
+
+  try {
+    const { account, role } = await findAccountByEmail(value.email);
+
+    if (!account) {
+      return success(res, null, 'Si el correo existe, enviamos un enlace de recuperación.');
+    }
+
+    const resetToken = generateResetToken({
+      type: 'password_reset',
+      userId: account._id,
+      email: account.email,
+      role,
+    });
+
+    const resetUrl = `${String(appBaseUrl || 'https://rosetta.jafrojas.com').replace(/\/$/, '')}/recoverPassword?token=${encodeURIComponent(resetToken)}`;
+    await sendPasswordResetLink(account.email, resetUrl);
+
+    return success(res, null, 'Si el correo existe, enviamos un enlace de recuperación.');
+  } catch (err) {
+    return error(res, err.message);
+  }
+};
+
+// POST /api/auth/verify-reset-code
+const verifyPasswordResetCode = async (req, res) => {
+  const schema = Joi.object({
+    verificationToken: Joi.string().required(),
+    code: Joi.string().length(6).required(),
+  });
+
+  const { error: validationError, value } = schema.validate(req.body);
+  if (validationError) return error(res, validationError.details[0].message, 400);
+
+  try {
+    const record = await findRecordByToken(value.verificationToken, 'password_reset');
+    const validation = await validateVerificationCode(record, value.code);
+    if (!validation.ok) return error(res, validation.message, 400);
+
+    const resetToken = generateResetToken({
+      type: 'password_reset',
+      userId: record.userId,
+      email: record.email,
+      role: record.role,
+    });
+
+    return success(res, { resetToken }, 'Código verificado correctamente.');
+  } catch (err) {
+    return error(res, err.message);
+  }
+};
+
+// POST /api/auth/reset-password
+const resetPassword = async (req, res) => {
+  const schema = Joi.object({
+    resetToken: Joi.string().required(),
+    newPassword: Joi.string()
+      .pattern(strongPasswordRegex)
+      .required()
+      .messages({
+        'string.pattern.base':
+          'La contraseña debe tener al menos 8 caracteres e incluir mayúscula, minúscula y número.',
+      }),
+  });
+
+  const { error: validationError, value } = schema.validate(req.body);
+  if (validationError) return error(res, validationError.details[0].message, 400);
+
+  try {
+    const decoded = jwt.verify(value.resetToken, jwtSecret);
+    if (decoded?.type !== 'password_reset' || !decoded?.userId || !decoded?.role) {
+      return error(res, 'Token de recuperación inválido.', 400);
+    }
+
+    let account;
+    if (decoded.role === 'admin') {
+      account = await Admin.findById(decoded.userId);
+    } else {
+      account = await Student.findById(decoded.userId);
+    }
+
+    if (!account || String(account.email || '').toLowerCase() !== String(decoded.email || '').toLowerCase()) {
+      return error(res, 'Usuario no encontrado.', 404);
+    }
+
+    account.password = value.newPassword;
+    await account.save();
+
+    await AuthVerificationToken.deleteMany({
+      email: String(account.email || '').toLowerCase(),
+      purpose: 'password_reset',
+    });
+
+    return success(res, null, 'Contraseña restablecida correctamente.');
+  } catch (err) {
+    return error(res, 'Token de recuperación inválido o expirado.', 400);
   }
 };
 
@@ -197,4 +399,14 @@ const changePassword = async (req, res) => {
   }
 };
 
-module.exports = { register, login, send2FA, verify2FA, getMe, changePassword };
+module.exports = {
+  register,
+  login,
+  resend2FA,
+  verify2FA,
+  requestPasswordReset,
+  verifyPasswordResetCode,
+  resetPassword,
+  getMe,
+  changePassword,
+};
