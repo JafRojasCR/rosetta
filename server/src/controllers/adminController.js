@@ -1,4 +1,5 @@
 const Student = require('../models/Student');
+const Class = require('../models/Class');
 const { success, error } = require('../utils/apiResponse');
 const Joi = require('joi');
 
@@ -52,6 +53,21 @@ const deleteStudent = async (req, res) => {
   try {
     const student = await Student.findOneAndDelete({ email: req.params.email });
     if (!student) return error(res, 'Estudiante no encontrado.', 404);
+
+    await Class.updateMany(
+      {},
+      {
+        $pull: {
+          classStudents: {
+            $or: [
+              { 'student.email': String(student.email || '').toLowerCase() },
+              { 'student.id': student._id },
+            ],
+          },
+        },
+      }
+    );
+
     return success(res, null, 'Estudiante eliminado');
   } catch (err) {
     return error(res, err.message);
@@ -87,6 +103,21 @@ const deleteMyAccount = async (req, res) => {
   try {
     const student = await Student.findOneAndDelete({ email: req.user.email });
     if (!student) return error(res, 'Estudiante no encontrado.', 404);
+
+    await Class.updateMany(
+      {},
+      {
+        $pull: {
+          classStudents: {
+            $or: [
+              { 'student.email': String(student.email || '').toLowerCase() },
+              { 'student.id': student._id },
+            ],
+          },
+        },
+      }
+    );
+
     return success(res, null, 'Cuenta eliminada');
   } catch (err) {
     return error(res, err.message);

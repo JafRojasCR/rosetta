@@ -72,7 +72,7 @@ const LoginPage = () => {
 
       <div
         onAnimationEnd={() => {
-          if (isSuccess) navigate(authenticatedRole === 'admin' ? '/admin' : '/dashboard');
+          if (isSuccess) navigate('/dashboard');
         }}
         style={isSuccess ? { animation: 'loginFall 1.05s forwards' } : {}}
         className={`bg-white p-8 md:p-12 rounded-[2.5rem] shadow-xl w-full max-w-[420px] text-center ${
