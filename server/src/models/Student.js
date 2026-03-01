@@ -30,6 +30,10 @@ const studentSchema = new mongoose.Schema(
       trim: true,
       default: '',
     },
+    lastLoginAt: {
+      type: Date,
+      default: null,
+    },
     twoFactorCode: {
       type: String,
       default: null,

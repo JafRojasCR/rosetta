@@ -64,6 +64,16 @@ const TwoFactorPage = () => {
     if (event.key === 'Backspace' && !code[index] && index > 0) {
       inputs.current[index - 1].focus();
     }
+
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      const complete = code.every((digit) => digit !== '');
+      if (complete) {
+        handleVerify();
+      } else {
+        handleResend();
+      }
+    }
   };
 
   const handlePaste = (event) => {
@@ -196,6 +206,7 @@ const TwoFactorPage = () => {
             </div>
 
             <button
+              type="button"
               disabled={!isComplete || isVerifying}
               onClick={handleVerify}
               className={`w-full py-5 rounded-[1.5rem] font-black text-xl transition-all flex items-center justify-center gap-3 mb-8 ${
@@ -219,6 +230,7 @@ const TwoFactorPage = () => {
                 ¿No recibiste nada?
               </p>
               <button
+                type="button"
                 onClick={handleResend}
                 disabled={resendCooldown > 0}
                 className={`flex items-center gap-2 mx-auto font-black text-sm transition-all ${

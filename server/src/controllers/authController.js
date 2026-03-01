@@ -227,6 +227,9 @@ const verify2FA = async (req, res) => {
       return error(res, 'Usuario no encontrado.', 404);
     }
 
+    user.lastLoginAt = new Date();
+    await user.save();
+
     const token = generateToken({ id: user._id, email: user.email, role: record.role });
 
     return success(res, { user, token, role: record.role }, 'Verificación exitosa');

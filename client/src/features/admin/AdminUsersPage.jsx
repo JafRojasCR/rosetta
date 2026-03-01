@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Mail, Phone, Search, Trash2, User, Users } from 'lucide-react';
+import { ArrowLeft, Mail, Phone, Search, Trash2, Users } from 'lucide-react';
 import api from '../../services/api';
 import LoadingSpinner from '../../components/LoadingSpinner';
 
@@ -175,7 +175,7 @@ const AdminUsersPage = () => {
                     <div className="min-w-0">
                       <h3 className="text-lg font-extrabold text-gray-900 truncate">{fullName}</h3>
                       <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mt-1">
-                        Registro: {formatDate(student.createdAt)}
+                        Última vez: {formatDate(student.lastLoginAt)}
                       </p>
                     </div>
 
@@ -198,10 +198,6 @@ const AdminUsersPage = () => {
                     <div className="flex items-center gap-2 text-sm font-semibold text-gray-600 min-w-0">
                       <Phone size={14} className="text-indigo-500 flex-shrink-0" />
                       <span className="truncate">{student.phone || 'Sin telefono'}</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-sm font-semibold text-gray-600 min-w-0">
-                      <User size={14} className="text-indigo-500 flex-shrink-0" />
-                      <span className="truncate">ID: {student._id || 'N/A'}</span>
                     </div>
                   </div>
                 </article>

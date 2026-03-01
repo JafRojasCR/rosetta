@@ -15,6 +15,10 @@ const adminSchema = new mongoose.Schema(
       required: true,
       minlength: 6,
     },
+    lastLoginAt: {
+      type: Date,
+      default: null,
+    },
   },
   { timestamps: true }
 );
