@@ -484,7 +484,7 @@ const AdminClassesPage = () => {
               onSubmit={handleSubmit}
               className="space-y-6 [&_input]:min-w-0 [&_input]:max-w-full [&_select]:min-w-0 [&_select]:max-w-full [&_textarea]:min-w-0 [&_textarea]:max-w-full"
             >
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5 [&>*]:min-w-0">
                 <div className="space-y-2">
                   <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">
                     Titulo
@@ -542,7 +542,7 @@ const AdminClassesPage = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5 p-5 bg-blue-50/40 rounded-3xl border border-blue-100">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5 p-5 bg-blue-50/40 rounded-3xl border border-blue-100 [&>*]:min-w-0">
                 <div className="space-y-2">
                   <label className="text-xs font-black text-blue-600 uppercase tracking-widest ml-1">
                     Video de clase
@@ -578,7 +578,7 @@ const AdminClassesPage = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-5 [&>*]:min-w-0">
                 <div className="space-y-2">
                   <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">
                     Monto
@@ -624,7 +624,7 @@ const AdminClassesPage = () => {
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4 space-y-4">
+              <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4 space-y-4 min-w-0">
                 <div className="flex items-center gap-3">
                   <input
                     id="isTutoring"
@@ -667,7 +667,7 @@ const AdminClassesPage = () => {
                     <Users size={12} />
                     Desbloqueada para
                   </label>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap gap-2 min-w-0">
                     {students.map((student) => {
                       const email = student.email;
                       const isSelected = form.unlockedStudentEmails.includes(email);
@@ -676,7 +676,7 @@ const AdminClassesPage = () => {
                           key={email}
                           type="button"
                           onClick={() => toggleStudentUnlock(email)}
-                          className={`px-3 py-2 rounded-xl text-xs font-black border-2 transition-all ${
+                          className={`max-w-full px-3 py-2 rounded-xl text-xs font-black border-2 transition-all truncate ${
                             isSelected
                               ? 'bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-100'
                               : 'bg-white border-gray-200 text-gray-500 hover:border-blue-200'
@@ -690,22 +690,22 @@ const AdminClassesPage = () => {
                 </div>
               </div>
 
-              <div className="bg-gray-900 rounded-2xl p-5 text-white flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div className="bg-gray-900 rounded-2xl p-5 text-white flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 min-w-0">
                 <div>
                   <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">
                     Codigo generado
                   </p>
-                  <p className="text-xl font-black tracking-widest text-emerald-400 mt-1">
+                  <p className="text-xl font-black tracking-widest text-emerald-400 mt-1 break-all">
                     {generatedClassCode}
                   </p>
                 </div>
 
-                <div className="flex gap-3">
+                <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto min-w-0">
                   {isEditing && (
                     <button
                       type="button"
                       onClick={cancelEdit}
-                      className="px-5 py-3 rounded-2xl font-black bg-gray-700 hover:bg-gray-600 transition-all"
+                      className="w-full sm:w-auto px-5 py-3 rounded-2xl font-black bg-gray-700 hover:bg-gray-600 transition-all"
                     >
                       Cancelar
                     </button>
@@ -713,7 +713,7 @@ const AdminClassesPage = () => {
                   <button
                     type="submit"
                     disabled={saving || loading}
-                    className="px-6 py-3 rounded-2xl font-black bg-blue-600 hover:bg-blue-500 transition-all flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                    className="w-full sm:w-auto px-6 py-3 rounded-2xl font-black bg-blue-600 hover:bg-blue-500 transition-all flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     <Save size={18} />
                     {saving ? 'Guardando...' : isEditing ? 'Guardar cambios' : 'Publicar clase'}

@@ -246,11 +246,11 @@ const ClassesPage = () => {
           />
         </div>
 
-        <div className="mt-4 md:hidden inline-flex bg-white p-1.5 rounded-2xl shadow-sm border border-gray-100 overflow-x-auto max-w-full">
+        <div className="mt-4 md:hidden w-full bg-white p-1 rounded-2xl shadow-sm border border-gray-100 flex">
           {[
-            { id: 'date', label: 'Fecha', icon: <Calendar size={14} /> },
-            { id: 'subject', label: 'Materia', icon: <BookOpen size={14} /> },
-            { id: 'status', label: 'Estado', icon: <Lock size={14} /> },
+            { id: 'date', label: 'Fecha' },
+            { id: 'subject', label: 'Materia' },
+            { id: 'status', label: 'Estado' },
           ].map((item) => {
             const isActive = sortBy === item.id;
 
@@ -258,7 +258,7 @@ const ClassesPage = () => {
               <button
                 key={item.id}
                 onClick={() => handleSort(item.id)}
-                className={`group flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all duration-300 whitespace-nowrap relative overflow-hidden ${
+                className={`group flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all duration-300 relative overflow-hidden ${
                   isActive
                     ? 'bg-blue-600 text-white shadow-lg shadow-blue-200'
                     : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'

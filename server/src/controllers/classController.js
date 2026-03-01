@@ -94,6 +94,16 @@ const buildSecurePlayerHtml = (streamUrl) => `<!doctype html>
       .vol-icon { color: #cbd5e1; font-size: 13px; font-weight: 700; line-height: 1; }
       .volume { flex: 0 0 66px; width: 66px; }
       .hint { color: #94a3b8; font-size: 11px; font-weight: 700; }
+      @media (max-width: 768px) {
+        .controls {
+          gap: 8px;
+          padding: 8px 10px;
+        }
+        .time,
+        .volume-wrap {
+          display: none;
+        }
+      }
     </style>
   </head>
   <body>
