@@ -384,6 +384,10 @@ const normalizeClassPayload = (body = {}) => {
   return payload;
 };
 
+const voteSchema = Joi.object({
+  vote: Joi.string().valid('1', '-1').allow(null).required(),
+});
+
 // GET /api/classes
 const getClasses = async (req, res) => {
   try {
@@ -472,6 +476,7 @@ const createClass = async (req, res) => {
           unlocked: Joi.boolean().default(false),
           unlockedAt: Joi.date().allow(null).optional(),
           paymentDate: Joi.date().allow(null).optional(),
+          vote: Joi.string().valid('1', '-1').allow(null).optional(),
         })
       )
       .optional(),
@@ -566,6 +571,7 @@ const updateClass = async (req, res) => {
           unlocked: Joi.boolean().default(false),
           unlockedAt: Joi.date().allow(null).optional(),
           paymentDate: Joi.date().allow(null).optional(),
+          vote: Joi.string().valid('1', '-1').allow(null).optional(),
         })
       )
       .optional(),
@@ -580,6 +586,29 @@ const updateClass = async (req, res) => {
     if (!existingClass) return error(res, 'Clase no encontrada.', 404);
 
     const updateData = { ...value };
+        if (Array.isArray(updateData.classStudents)) {
+          const voteByEmail = (existingClass.classStudents || []).reduce((accumulator, entry) => {
+            const email = String(entry?.student?.email || '').toLowerCase();
+            if (!email) return accumulator;
+
+            if (entry?.vote === '1' || entry?.vote === '-1' || entry?.vote === null) {
+              accumulator[email] = entry.vote;
+            }
+            return accumulator;
+          }, {});
+
+          updateData.classStudents = updateData.classStudents.map((entry) => {
+            const email = String(entry?.student?.email || '').toLowerCase();
+            return {
+              ...entry,
+              vote:
+                entry?.vote === '1' || entry?.vote === '-1' || entry?.vote === null
+                  ? entry.vote
+                  : voteByEmail[email] ?? null,
+            };
+          });
+        }
+
     const nextClassCode = String(updateData.classCode || '').trim();
     const willChangeClassCode =
       Boolean(nextClassCode) && nextClassCode !== existingClass.classCode;
@@ -655,6 +684,47 @@ const updateClass = async (req, res) => {
   } catch (err) {
     await removeTempFile(req.files?.recordingFile?.[0]?.path);
     await removeTempFile(req.files?.canvaFile?.[0]?.path);
+    return error(res, err.message);
+  }
+};
+
+// PATCH /api/classes/:classCode/vote (student)
+const setClassVote = async (req, res) => {
+  const { error: validationError, value } = voteSchema.validate(req.body || {});
+  if (validationError) return error(res, validationError.details[0].message, 400);
+
+  try {
+    const userEmail = String(req.user?.email || '').toLowerCase();
+    if (!userEmail) {
+      return error(res, 'No se pudo identificar al estudiante.', 401);
+    }
+
+    const cls = await Class.findOne({ classCode: req.params.classCode });
+    if (!cls) return error(res, 'Clase no encontrada.', 404);
+
+    const studentEntryIndex = (cls.classStudents || []).findIndex(
+      (entry) =>
+        String(entry?.student?.email || '').toLowerCase() === userEmail &&
+        entry?.unlocked === true
+    );
+
+    if (studentEntryIndex < 0) {
+      return error(res, 'Solo puedes votar clases desbloqueadas para tu cuenta.', 403);
+    }
+
+    const normalizedVote = value.vote === '1' || value.vote === '-1' ? value.vote : null;
+    cls.classStudents[studentEntryIndex].vote = normalizedVote;
+    await cls.save();
+
+    return success(
+      res,
+      {
+        classCode: cls.classCode,
+        vote: normalizedVote,
+      },
+      'Voto actualizado correctamente.'
+    );
+  } catch (err) {
     return error(res, err.message);
   }
 };
@@ -805,4 +875,5 @@ module.exports = {
   getClassEmbedToken,
   getClassEmbedByToken,
   getClassEmbedStreamByToken,
+  setClassVote,
 };

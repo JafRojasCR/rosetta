@@ -1,6 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, ArrowUp, BookOpen, Calendar, ChevronDown, Lock, Search, Unlock } from 'lucide-react';
+import {
+  ArrowLeft,
+  ArrowUp,
+  BookOpen,
+  Calendar,
+  ChevronDown,
+  Lock,
+  Search,
+  ThumbsDown,
+  ThumbsUp,
+  Unlock,
+} from 'lucide-react';
 import api from '../../services/api';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import useAuth from '../../hooks/useAuth';
@@ -36,6 +47,7 @@ const ClassesPage = () => {
   const [isAnimating, setIsAnimating] = useState(false);
   const [iframeUrls, setIframeUrls] = useState({});
   const [loadingIframeByClass, setLoadingIframeByClass] = useState({});
+  const [votingByClass, setVotingByClass] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const sortAnimTimerRef = useRef(null);
@@ -71,6 +83,9 @@ const ClassesPage = () => {
   const classesForStudent = useMemo(() => {
     const enriched = (classes || []).map((cls) => {
       const classStudents = cls.classStudents || [];
+      const currentStudentEntry = classStudents.find(
+        (entry) => entry?.student?.email?.toLowerCase() === userEmail
+      );
       const unlocked = classStudents.some(
         (entry) =>
           entry?.student?.email?.toLowerCase() === userEmail &&
@@ -91,6 +106,10 @@ const ClassesPage = () => {
         displayDateLong: formatRightDate(cls.date),
         displayTitle: `Clase ${dayMonth}: ${title.toUpperCase()}`,
         tutoredStudentName,
+        currentVote:
+          currentStudentEntry?.vote === '1' || currentStudentEntry?.vote === '-1'
+            ? currentStudentEntry.vote
+            : null,
       };
     });
 
@@ -158,6 +177,37 @@ const ClassesPage = () => {
       setError('No se pudo cargar el reproductor de la clase.');
     } finally {
       setLoadingIframeByClass((prev) => ({ ...prev, [cls.classCode]: false }));
+    }
+  };
+
+  const handleVote = async (cls, voteValue) => {
+    if (cls.isLocked) return;
+
+    const currentVote = cls.currentVote || null;
+    const nextVote = currentVote === voteValue ? null : voteValue;
+
+    setVotingByClass((prev) => ({ ...prev, [cls.classCode]: true }));
+    setError('');
+
+    try {
+      await api.patch(`/classes/${cls.classCode}/vote`, { vote: nextVote });
+
+      setClasses((prev) =>
+        prev.map((entry) => {
+          if (entry.classCode !== cls.classCode) return entry;
+
+          const nextClassStudents = (entry.classStudents || []).map((studentEntry) => {
+            if (studentEntry?.student?.email?.toLowerCase() !== userEmail) return studentEntry;
+            return { ...studentEntry, vote: nextVote };
+          });
+
+          return { ...entry, classStudents: nextClassStudents };
+        })
+      );
+    } catch (requestError) {
+      setError(requestError.response?.data?.message || 'No se pudo registrar tu voto.');
+    } finally {
+      setVotingByClass((prev) => ({ ...prev, [cls.classCode]: false }));
     }
   };
 
@@ -420,6 +470,41 @@ const ClassesPage = () => {
 
                       <div className="text-gray-500 font-medium leading-relaxed text-sm bg-white border border-gray-100 rounded-2xl p-4">
                         {cls.description || 'Sin descripcion registrada.'}
+                      </div>
+
+                      <div className="bg-white border border-gray-100 rounded-2xl p-4">
+                        <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">
+                          Vota esta clase
+                        </p>
+                        <div className="grid grid-cols-2 gap-3">
+                          <button
+                            type="button"
+                            onClick={() => handleVote(cls, '1')}
+                            disabled={Boolean(votingByClass[cls.classCode])}
+                            className={`w-full py-3 rounded-2xl font-black transition-all flex items-center justify-center gap-2 disabled:opacity-60 ${
+                              cls.currentVote === '1'
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+                            }`}
+                          >
+                            <ThumbsUp size={16} />
+                            Me gustó
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleVote(cls, '-1')}
+                            disabled={Boolean(votingByClass[cls.classCode])}
+                            className={`w-full py-3 rounded-2xl font-black transition-all flex items-center justify-center gap-2 disabled:opacity-60 ${
+                              cls.currentVote === '-1'
+                                ? 'bg-red-600 text-white'
+                                : 'bg-red-50 text-red-600 hover:bg-red-100'
+                            }`}
+                          >
+                            <ThumbsDown size={16} />
+                            No me gustó
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>

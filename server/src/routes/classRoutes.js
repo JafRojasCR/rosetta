@@ -9,14 +9,16 @@ const {
   getClassEmbedToken,
   getClassEmbedByToken,
   getClassEmbedStreamByToken,
+  setClassVote,
 } = require('../controllers/classController');
-const { protect, adminOnly, optionalAuth } = require('../middlewares/authMiddleware');
+const { protect, adminOnly, optionalAuth, studentOnly } = require('../middlewares/authMiddleware');
 const uploadClassFiles = require('../middlewares/uploadClassFiles');
 
 router.get('/', getClasses);
 router.get('/embed/:token/stream', getClassEmbedStreamByToken);
 router.get('/embed/:token', getClassEmbedByToken);
 router.get('/:classCode/embed-token', protect, getClassEmbedToken);
+router.patch('/:classCode/vote', protect, studentOnly, setClassVote);
 router.get('/:classCode', optionalAuth, getClassByCode);
 router.post(
   '/',

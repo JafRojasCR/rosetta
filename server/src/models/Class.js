@@ -98,6 +98,11 @@ const classSchema = new mongoose.Schema(
           type: Date,
           default: null,
         },
+        vote: {
+          type: String,
+          enum: ['1', '-1', null],
+          default: null,
+        },
       },
     ],
   },

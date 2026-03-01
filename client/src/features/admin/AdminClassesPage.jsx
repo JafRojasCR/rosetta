@@ -9,6 +9,7 @@ import {
   Link as LinkIcon,
   Plus,
   Save,
+  Star,
   Trash2,
   Type,
   User,
@@ -46,6 +47,22 @@ const generateClassCode = (subjectId, date, order) => {
   if (!year || !month || !day) return '---';
   const prefix = String(subjectId).slice(0, 3).toLowerCase();
   return `${prefix}${day}${month}${padOrder(order || '01')}`;
+};
+
+const calculateStarRating = (classStudents = []) => {
+  const numericVotes = (classStudents || [])
+    .map((entry) => {
+      if (entry?.vote === '1') return 1;
+      if (entry?.vote === '-1') return -1;
+      return null;
+    })
+    .filter((value) => value !== null);
+
+  if (numericVotes.length === 0) return null;
+
+  const average = numericVotes.reduce((accumulator, value) => accumulator + value, 0) / numericVotes.length;
+  const stars = ((average + 1) / 2) * 5;
+  return Number(stars.toFixed(1));
 };
 
 const INITIAL_FORM = {
@@ -764,6 +781,33 @@ const AdminClassesPage = () => {
                   key={cls.classCode}
                   className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm"
                 >
+                  {(() => {
+                    const rating = calculateStarRating(cls.classStudents || []);
+                    const filledStars = rating === null ? 0 : Math.round(rating);
+
+                    return (
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <span className="text-[10px] font-black tracking-widest uppercase text-gray-400">
+                          Rating
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1 text-amber-400">
+                            {Array.from({ length: 5 }).map((_, index) => (
+                              <Star
+                                key={`${cls.classCode}-star-${index}`}
+                                size={14}
+                                className={index < filledStars ? 'fill-current' : 'text-gray-200'}
+                              />
+                            ))}
+                          </div>
+                          <span className="text-xs font-black text-gray-500 min-w-[4ch] text-right">
+                            {rating === null ? '--' : rating.toFixed(1)}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="text-sm font-black text-gray-900">{cls.title}</p>
