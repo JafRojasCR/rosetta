@@ -3,12 +3,13 @@ import useAuth from '../hooks/useAuth';
 
 const ProtectedRoute = ({ children, requiredRole }) => {
   const { user, role } = useAuth();
+  const resolvedRole = String(role || user?.role || (user?.isAdmin ? 'admin' : '')).toLowerCase();
 
   if (!user) {
     return <Navigate to="/login" replace />;
   }
 
-  if (requiredRole && role !== requiredRole) {
+  if (requiredRole && resolvedRole !== String(requiredRole).toLowerCase()) {
     return <Navigate to="/dashboard" replace />;
   }
 

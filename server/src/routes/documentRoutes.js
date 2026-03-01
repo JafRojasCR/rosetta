@@ -8,11 +8,11 @@ const {
   deleteDocument,
 } = require('../controllers/documentController');
 const { protect, adminOnly } = require('../middlewares/authMiddleware');
-const upload = require('../middlewares/upload');
+const uploadDocument = require('../middlewares/uploadDocument');
 
 router.get('/', getDocuments);
 router.get('/:docId', getDocumentById);
-router.post('/', protect, adminOnly, upload.single('file'), createDocument);
+router.post('/', protect, adminOnly, uploadDocument.single('file'), createDocument);
 router.put('/:docId', protect, adminOnly, updateDocument);
 router.delete('/:docId', protect, adminOnly, deleteDocument);
 

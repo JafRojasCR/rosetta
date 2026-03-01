@@ -90,7 +90,7 @@ const AppRouter = () => {
         }
       />
       <Route
-        path="/documentos"
+        path="/recursos"
         element={
           <ProtectedRoute>
             <MainLayout>
@@ -100,9 +100,9 @@ const AppRouter = () => {
         }
       />
       <Route
-        path="/documentos/admin"
+        path="/recursos/admin"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute requiredRole="admin">
             <AdminDocumentsPage />
           </ProtectedRoute>
         }
@@ -110,7 +110,7 @@ const AppRouter = () => {
       <Route
         path="/admin/clases"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute requiredRole="admin">
             <AdminClassesPage />
           </ProtectedRoute>
         }
@@ -118,7 +118,7 @@ const AppRouter = () => {
       <Route
         path="/admin/pagos"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute requiredRole="admin">
             <AdminPaymentsPage />
           </ProtectedRoute>
         }
@@ -126,7 +126,7 @@ const AppRouter = () => {
       <Route
         path="/admin/usuarios"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute requiredRole="admin">
             <AdminUsersPage />
           </ProtectedRoute>
         }
@@ -134,7 +134,7 @@ const AppRouter = () => {
       <Route
         path="/admin/materias"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute requiredRole="admin">
             <AdminSubjectsPage />
           </ProtectedRoute>
         }
@@ -142,8 +142,17 @@ const AppRouter = () => {
       <Route
         path="/configuracion"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute requiredRole="admin">
             <SettingsPage />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/admin/dashboard"
+        element={
+          <ProtectedRoute requiredRole="admin">
+            <DashboardPage />
           </ProtectedRoute>
         }
       />

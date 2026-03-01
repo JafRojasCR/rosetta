@@ -1,6 +1,21 @@
 const Document = require('../models/Document');
 const { success, error } = require('../utils/apiResponse');
 const Joi = require('joi');
+const {
+  uploadFileToGoogleDrive,
+  deleteFileFromGoogleDrive,
+  removeTempFile,
+} = require('../services/googleDriveService');
+
+const extractGoogleDriveFileId = (url = '') => {
+  const idFromQuery = url.match(/[?&]id=([^&]+)/);
+  if (idFromQuery?.[1]) return idFromQuery[1];
+
+  const idFromPath = url.match(/\/d\/([^/]+)/);
+  if (idFromPath?.[1]) return idFromPath[1];
+
+  return '';
+};
 
 // GET /api/documents
 const getDocuments = async (req, res) => {
@@ -44,17 +59,36 @@ const createDocument = async (req, res) => {
   try {
     if (!req.file) return error(res, 'Archivo requerido.', 400);
 
+    let fileUrl = `/uploads/${req.file.filename}`;
+    const type = req.file.mimetype.startsWith('video/') ? 'video' : 'pdf';
+
+    const driveUpload = await uploadFileToGoogleDrive({
+      filePath: req.file.path,
+      fileName: req.file.originalname || req.file.filename,
+      mimeType: req.file.mimetype,
+    });
+
+    if (driveUpload.uploaded && driveUpload.fileUrl) {
+      fileUrl = driveUpload.fileUrl;
+      await removeTempFile(req.file.path);
+    }
+
     const docId = `DOC-${Date.now()}`;
     const doc = await Document.create({
       docId,
       ...value,
+      type,
       date: new Date(),
-      fileUrl: `/uploads/${req.file.filename}`,
+      fileUrl,
+      driveFileId: driveUpload.fileId || '',
       adminEmail: req.user.email,
     });
 
     return success(res, doc, 'Documento creado exitosamente', 201);
   } catch (err) {
+    if (req.file?.path) {
+      await removeTempFile(req.file.path);
+    }
     return error(res, err.message);
   }
 };
@@ -89,8 +123,15 @@ const updateDocument = async (req, res) => {
 // DELETE /api/documents/:docId (admin)
 const deleteDocument = async (req, res) => {
   try {
-    const doc = await Document.findOneAndDelete({ docId: req.params.docId });
+    const doc = await Document.findOne({ docId: req.params.docId });
     if (!doc) return error(res, 'Documento no encontrado.', 404);
+
+    const driveFileId = doc.driveFileId || extractGoogleDriveFileId(doc.fileUrl || '');
+    if (driveFileId) {
+      await deleteFileFromGoogleDrive(driveFileId);
+    }
+
+    await Document.deleteOne({ _id: doc._id });
     return success(res, null, 'Documento eliminado exitosamente');
   } catch (err) {
     return error(res, err.message);

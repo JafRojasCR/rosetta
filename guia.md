@@ -6,6 +6,32 @@ Esta guía explica cómo funciona la subida de archivos en el backend (Node/Expr
 
 ## 1. Configuración base de uploads
 
+### Configuración Google Drive (OAuth)
+
+El backend ahora usa **OAuth 2.0** para publicar en Google Drive.
+
+Variables requeridas en `server/.env`:
+
+- `GOOGLE_DRIVE_ENABLED=true`
+- `GOOGLE_DRIVE_CLIENT_ID`
+- `GOOGLE_DRIVE_CLIENT_SECRET`
+- `GOOGLE_DRIVE_REDIRECT_URI` (recomendado: `https://developers.google.com/oauthplayground`)
+- `GOOGLE_DRIVE_REFRESH_TOKEN`
+- `GOOGLE_DRIVE_FOLDER_ID`
+
+Si `GOOGLE_DRIVE_ENABLED=false`, el sistema mantiene el almacenamiento local en `/uploads`.
+
+Para la configuración paso a paso del OAuth, revisa `guia-google-drive.md`.
+
+Pasos rápidos:
+
+1. En Google Cloud habilita **Google Drive API**.
+2. Crea credencial **OAuth Client ID** (tipo Web Application).
+3. Agrega `https://developers.google.com/oauthplayground` como redirect URI autorizada.
+4. En OAuth Playground, usa tu `Client ID` + `Client Secret`, autoriza scope `https://www.googleapis.com/auth/drive.file` y genera `refresh_token`.
+5. Crea carpeta en Drive y copia `GOOGLE_DRIVE_FOLDER_ID`.
+6. Completa variables en `server/.env` y reinicia backend.
+
 **Archivo clave:** server/src/middlewares/upload.js
 
 - Se utiliza `multer` con `diskStorage` para guardar archivos en disco.

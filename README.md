@@ -76,6 +76,13 @@ Esto inicia:
 | `JWT_SECRET` | Secreto para JWT | `tu_secreto_seguro` |
 | `JWT_EXPIRES_IN` | Expiración del token | `7d` |
 | `NODE_ENV` | Entorno de ejecución | `development` |
+| `UPLOAD_DIR` | Carpeta local de uploads | `uploads` |
+| `GOOGLE_DRIVE_ENABLED` | Habilita subida a Google Drive | `true` o `false` |
+| `GOOGLE_DRIVE_CLIENT_ID` | Client ID OAuth de Google | `123...apps.googleusercontent.com` |
+| `GOOGLE_DRIVE_CLIENT_SECRET` | Client Secret OAuth de Google | `GOCSPX-...` |
+| `GOOGLE_DRIVE_REDIRECT_URI` | Redirect URI de OAuth | `https://developers.google.com/oauthplayground` |
+| `GOOGLE_DRIVE_REFRESH_TOKEN` | Refresh Token OAuth | `1//0g...` |
+| `GOOGLE_DRIVE_FOLDER_ID` | ID de la carpeta destino en Drive | `1AbCDefGhIj...` |
 
 ### Frontend (`client/.env`)
 
@@ -100,6 +107,12 @@ Esto inicia:
 - ✅ Gestión de clases (CRUD)
 - ✅ Gestión de documentos (CRUD)
 - ✅ Ver todos los pagos
+
+### Archivos y Google Drive
+- ✅ Documentos (`POST /api/documents`) permiten archivo y publicación en Google Drive
+- ✅ Clases (`POST/PUT /api/classes`) aceptan `recordingFile` y `canvaFile` en multipart
+- ✅ Con `GOOGLE_DRIVE_ENABLED=true`, los enlaces guardados serán de Google Drive
+- ✅ Con `GOOGLE_DRIVE_ENABLED=false`, se mantiene almacenamiento local en `/uploads`
 
 ## 🚀 Despliegue en Vercel
 
@@ -146,6 +159,7 @@ Mínimas recomendadas para producción:
 - `JWT_EXPIRES_IN` (opcional, por ejemplo `7d`)
 - `EMAIL_USER` y `EMAIL_PASS` (si usas envío de correos)
 - `UPLOAD_DIR` (opcional; por defecto `uploads`)
+- `GOOGLE_DRIVE_ENABLED`, `GOOGLE_DRIVE_CLIENT_ID`, `GOOGLE_DRIVE_CLIENT_SECRET`, `GOOGLE_DRIVE_REDIRECT_URI`, `GOOGLE_DRIVE_REFRESH_TOKEN`, `GOOGLE_DRIVE_FOLDER_ID` (si usas Drive)
 - `VITE_API_URL` (opcional; para este setup puede omitirse y usar `/api`)
 
 ```bash
@@ -163,6 +177,12 @@ vercel --prod
 | `npm run dev` | Inicia frontend y backend en desarrollo |
 | `npm run build` | Construye el frontend para producción |
 | `npm run start` | Inicia el servidor en producción |
+
+## 📘 Guía Google Drive
+
+Para configurar el Service Account, permisos de carpeta y variables de entorno paso a paso, revisa:
+
+- [guia-google-drive.md](guia-google-drive.md)
 
 ## 🗂️ Modelos de Datos
 

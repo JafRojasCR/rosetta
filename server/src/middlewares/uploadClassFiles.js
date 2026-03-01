@@ -1,0 +1,39 @@
+const multer = require('multer');
+const path = require('path');
+const { uploadDir } = require('../config/env');
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
+  },
+});
+
+const fileFilter = (req, file, cb) => {
+  const allowedTypes = [
+    'video/mp4',
+    'video/webm',
+    'video/quicktime',
+    'application/pdf',
+    'image/jpeg',
+    'image/png',
+    'image/jpg',
+  ];
+
+  if (allowedTypes.includes(file.mimetype)) {
+    cb(null, true);
+  } else {
+    cb(new Error('Tipo de archivo no permitido para clases.'), false);
+  }
+};
+
+const uploadClassFiles = multer({
+  storage,
+  fileFilter,
+  limits: { fileSize: 200 * 1024 * 1024 },
+});
+
+module.exports = uploadClassFiles;

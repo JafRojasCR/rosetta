@@ -2,6 +2,10 @@ const Class = require('../models/Class');
 const Payment = require('../models/Payment');
 const { success, error } = require('../utils/apiResponse');
 const Joi = require('joi');
+const {
+  uploadFileToGoogleDrive,
+  removeTempFile,
+} = require('../services/googleDriveService');
 
 // GET /api/classes
 const getClasses = async (req, res) => {
@@ -72,12 +76,52 @@ const createClass = async (req, res) => {
     const existing = await Class.findOne({ classCode: value.classCode });
     if (existing) return error(res, 'Ya existe una clase con ese código.', 409);
 
+    let recordingUrl = value.recordingUrl || null;
+    let canvaUrl = value.canvaUrl || null;
+
+    const recordingFile = req.files?.recordingFile?.[0];
+    const canvaFile = req.files?.canvaFile?.[0];
+
+    if (recordingFile) {
+      const uploaded = await uploadFileToGoogleDrive({
+        filePath: recordingFile.path,
+        fileName: recordingFile.originalname || recordingFile.filename,
+        mimeType: recordingFile.mimetype,
+      });
+
+      if (uploaded.uploaded && uploaded.fileUrl) {
+        recordingUrl = uploaded.fileUrl;
+        await removeTempFile(recordingFile.path);
+      } else {
+        recordingUrl = `/uploads/${recordingFile.filename}`;
+      }
+    }
+
+    if (canvaFile) {
+      const uploaded = await uploadFileToGoogleDrive({
+        filePath: canvaFile.path,
+        fileName: canvaFile.originalname || canvaFile.filename,
+        mimeType: canvaFile.mimetype,
+      });
+
+      if (uploaded.uploaded && uploaded.fileUrl) {
+        canvaUrl = uploaded.fileUrl;
+        await removeTempFile(canvaFile.path);
+      } else {
+        canvaUrl = `/uploads/${canvaFile.filename}`;
+      }
+    }
+
     const cls = await Class.create({
       ...value,
+      recordingUrl,
+      canvaUrl,
       adminEmail: value.adminEmail || req.user.email,
     });
     return success(res, cls, 'Clase creada exitosamente', 201);
   } catch (err) {
+    await removeTempFile(req.files?.recordingFile?.[0]?.path);
+    await removeTempFile(req.files?.canvaFile?.[0]?.path);
     return error(res, err.message);
   }
 };
@@ -103,14 +147,51 @@ const updateClass = async (req, res) => {
   if (validationError) return error(res, validationError.details[0].message, 400);
 
   try {
+    const updateData = { ...value };
+
+    const recordingFile = req.files?.recordingFile?.[0];
+    const canvaFile = req.files?.canvaFile?.[0];
+
+    if (recordingFile) {
+      const uploaded = await uploadFileToGoogleDrive({
+        filePath: recordingFile.path,
+        fileName: recordingFile.originalname || recordingFile.filename,
+        mimeType: recordingFile.mimetype,
+      });
+
+      if (uploaded.uploaded && uploaded.fileUrl) {
+        updateData.recordingUrl = uploaded.fileUrl;
+        await removeTempFile(recordingFile.path);
+      } else {
+        updateData.recordingUrl = `/uploads/${recordingFile.filename}`;
+      }
+    }
+
+    if (canvaFile) {
+      const uploaded = await uploadFileToGoogleDrive({
+        filePath: canvaFile.path,
+        fileName: canvaFile.originalname || canvaFile.filename,
+        mimeType: canvaFile.mimetype,
+      });
+
+      if (uploaded.uploaded && uploaded.fileUrl) {
+        updateData.canvaUrl = uploaded.fileUrl;
+        await removeTempFile(canvaFile.path);
+      } else {
+        updateData.canvaUrl = `/uploads/${canvaFile.filename}`;
+      }
+    }
+
     const cls = await Class.findOneAndUpdate(
       { classCode: req.params.classCode },
-      value,
+      updateData,
       { new: true, runValidators: true }
     );
     if (!cls) return error(res, 'Clase no encontrada.', 404);
     return success(res, cls, 'Clase actualizada exitosamente');
   } catch (err) {
+    await removeTempFile(req.files?.recordingFile?.[0]?.path);
+    await removeTempFile(req.files?.canvaFile?.[0]?.path);
     return error(res, err.message);
   }
 };

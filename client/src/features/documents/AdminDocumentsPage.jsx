@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, UploadCloud, FileText } from 'lucide-react';
+import { ArrowLeft, UploadCloud, FileText, Trash2 } from 'lucide-react';
 import api from '../../services/api';
 
 const AdminDocumentsPage = () => {
@@ -15,6 +15,9 @@ const AdminDocumentsPage = () => {
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [loadingSubjects, setLoadingSubjects] = useState(false);
+  const [documents, setDocuments] = useState([]);
+  const [loadingDocuments, setLoadingDocuments] = useState(false);
+  const [deletingDocId, setDeletingDocId] = useState('');
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
 
@@ -37,6 +40,22 @@ const AdminDocumentsPage = () => {
     };
 
     fetchSubjects();
+  }, []);
+
+  const fetchDocuments = async () => {
+    setLoadingDocuments(true);
+    try {
+      const response = await api.get('/documents');
+      setDocuments(response.data.data || []);
+    } catch (err) {
+      setError('No se pudieron cargar los recursos.');
+    } finally {
+      setLoadingDocuments(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchDocuments();
   }, []);
 
   const handleChange = (event) => {
@@ -71,13 +90,30 @@ const AdminDocumentsPage = () => {
       await api.post('/documents', payload, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-      setSuccess('Documento cargado correctamente.');
+      setSuccess('Recurso cargado correctamente.');
       setForm({ title: '', description: '', subjectId: '' });
       setFile(null);
+      await fetchDocuments();
     } catch (err) {
-      setError(err.response?.data?.message || 'Error al cargar el documento.');
+      setError(err.response?.data?.message || 'Error al cargar el recurso.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDeleteDocument = async (docId) => {
+    setError('');
+    setSuccess('');
+    setDeletingDocId(docId);
+
+    try {
+      await api.delete(`/documents/${docId}`);
+      setSuccess('Recurso eliminado correctamente.');
+      await fetchDocuments();
+    } catch (err) {
+      setError(err.response?.data?.message || 'No se pudo eliminar el recurso.');
+    } finally {
+      setDeletingDocId('');
     }
   };
 
@@ -102,9 +138,9 @@ const AdminDocumentsPage = () => {
           </button>
           <div>
             <h1 className="text-lg sm:text-2xl font-bold text-gray-800 tracking-tight">
-              Subir documentos
+              Subir recursos
             </h1>
-            <p className="text-sm text-gray-500">Panel preliminar para pruebas</p>
+            <p className="text-sm text-gray-500">Panel de gestión de recursos</p>
           </div>
         </div>
       </nav>
@@ -118,7 +154,7 @@ const AdminDocumentsPage = () => {
             <div>
               <h2 className="text-xl font-extrabold text-gray-900">Carga de documentos</h2>
               <p className="text-sm text-gray-500">
-                Los archivos permitidos actuales son PDF, JPG y PNG.
+                Carga recursos en PDF o video para tus estudiantes.
               </p>
             </div>
           </div>
@@ -146,7 +182,7 @@ const AdminDocumentsPage = () => {
                   value={form.title}
                   onChange={handleChange}
                   className="w-full bg-gray-50 border-transparent border-2 focus:border-blue-500 focus:bg-white rounded-2xl px-5 py-3.5 font-semibold transition-all outline-none"
-                  placeholder="Titulo del documento"
+                  placeholder="Titulo del recurso"
                 />
               </div>
               <div className="space-y-2">
@@ -209,7 +245,7 @@ const AdminDocumentsPage = () => {
                     type="file"
                     onChange={handleFileChange}
                     className="hidden"
-                    accept=".pdf,.png,.jpg,.jpeg"
+                    accept=".pdf,.mp4,.webm,.mov,.mpeg"
                   />
                 </label>
               </div>
@@ -221,10 +257,44 @@ const AdminDocumentsPage = () => {
                 disabled={loading}
                 className="bg-blue-600 text-white hover:bg-blue-700 px-10 py-4 rounded-2xl font-black shadow-xl shadow-blue-200 transition-all active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                {loading ? 'Subiendo...' : 'Subir documento'}
+                {loading ? 'Subiendo...' : 'Subir recurso'}
               </button>
             </div>
           </form>
+
+          <div className="mt-10">
+            <h3 className="text-lg font-bold text-gray-900 mb-3">Recursos registrados</h3>
+            {loadingDocuments ? (
+              <p className="text-gray-500 font-medium">Cargando recursos...</p>
+            ) : documents.length === 0 ? (
+              <p className="text-gray-500 font-medium">No hay recursos registrados.</p>
+            ) : (
+              <div className="grid grid-cols-1 gap-3">
+                {documents.map((doc) => (
+                  <div
+                    key={doc.docId}
+                    className="bg-gray-50 border border-gray-100 rounded-2xl px-4 py-3 flex items-start justify-between gap-3"
+                  >
+                    <div>
+                      <p className="text-gray-900 font-bold">{doc.title}</p>
+                      <p className="text-xs uppercase tracking-widest text-gray-400 font-black mt-1">
+                        {doc.docId}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteDocument(doc.docId)}
+                      disabled={deletingDocId === doc.docId}
+                      className="w-9 h-9 rounded-xl bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-60 flex items-center justify-center"
+                      title="Eliminar"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

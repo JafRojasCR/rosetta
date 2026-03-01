@@ -25,4 +25,12 @@ module.exports = {
   emailPass: process.env.EMAIL_PASS || '',
   uploadDir,
   isVercel,
+  googleDriveEnabled:
+    process.env.GOOGLE_DRIVE_ENABLED === '1' || process.env.GOOGLE_DRIVE_ENABLED === 'true',
+  googleDriveClientId: process.env.GOOGLE_DRIVE_CLIENT_ID || '',
+  googleDriveClientSecret: process.env.GOOGLE_DRIVE_CLIENT_SECRET || '',
+  googleDriveRedirectUri:
+    process.env.GOOGLE_DRIVE_REDIRECT_URI || 'https://developers.google.com/oauthplayground',
+  googleDriveRefreshToken: process.env.GOOGLE_DRIVE_REFRESH_TOKEN || '',
+  googleDriveFolderId: process.env.GOOGLE_DRIVE_FOLDER_ID || '',
 };

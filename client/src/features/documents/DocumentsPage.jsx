@@ -5,7 +5,6 @@ import {
   BookOpen,
   Clock,
   Download,
-  ExternalLink,
   PlayCircle,
   Search,
 } from 'lucide-react';
@@ -17,49 +16,6 @@ const DOCUMENT_THUMB =
 const VIDEO_THUMB =
   'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=600&auto=format&fit=crop';
 
-const mockResources = [
-  {
-    id: 1,
-    title: 'Introduccion a la Gramatica Avanzada',
-    type: 'pdf',
-    category: 'Gramatica',
-    author: 'Prof. Alberto Rojas',
-    duration: '15 paginas',
-    thumbnail: DOCUMENT_THUMB,
-    date: '12 Oct 2023',
-  },
-  {
-    id: 2,
-    title: 'Tecnicas de Pronunciacion: Vocales',
-    type: 'video',
-    category: 'Fonetica',
-    author: 'Dra. Elena Vizcaino',
-    duration: '12:45 min',
-    thumbnail: VIDEO_THUMB,
-    date: '05 Nov 2023',
-  },
-  {
-    id: 3,
-    title: 'Historia del Arte Contemporaneo',
-    type: 'pdf',
-    category: 'Cultura',
-    author: 'Msc. Roberto Saenz',
-    duration: '42 paginas',
-    thumbnail: DOCUMENT_THUMB,
-    date: '20 Ene 2024',
-  },
-  {
-    id: 4,
-    title: 'Masterclass: Redaccion Creativa',
-    type: 'video',
-    category: 'Escritura',
-    author: 'Lic. Marta Castillo',
-    duration: '45:20 min',
-    thumbnail: VIDEO_THUMB,
-    date: '15 Feb 2024',
-  },
-];
-
 const normalizeType = (resource) => {
   const explicitType = resource?.type?.toLowerCase();
   if (explicitType === 'video' || explicitType === 'pdf') return explicitType;
@@ -68,6 +24,24 @@ const normalizeType = (resource) => {
   if (fileUrl.match(/\.(mp4|mov|webm)$/i)) return 'video';
 
   return 'pdf';
+};
+
+const getGoogleDriveFileId = (url) => {
+  if (!url) return '';
+
+  const idFromQuery = url.match(/[?&]id=([^&]+)/);
+  if (idFromQuery?.[1]) return idFromQuery[1];
+
+  const idFromPath = url.match(/\/d\/([^/]+)/);
+  if (idFromPath?.[1]) return idFromPath[1];
+
+  return '';
+};
+
+const getDownloadUrl = (url) => {
+  const fileId = getGoogleDriveFileId(url);
+  if (!fileId) return url;
+  return `https://drive.google.com/uc?export=download&id=${fileId}`;
 };
 
 const buildResource = (doc) => {
@@ -114,7 +88,7 @@ const DocumentsPage = () => {
         const response = await api.get('/documents');
         setDocuments(response.data.data || []);
       } catch (err) {
-        setError('Error al cargar los documentos');
+        setError('Error al cargar los recursos');
       } finally {
         setLoading(false);
       }
@@ -123,13 +97,7 @@ const DocumentsPage = () => {
     fetchDocuments();
   }, []);
 
-  const resources = useMemo(() => {
-    if (documents.length > 0) {
-      return documents.map(buildResource);
-    }
-
-    return mockResources;
-  }, [documents]);
+  const resources = useMemo(() => documents.map(buildResource), [documents]);
 
   const filteredResources = resources.filter((res) => {
     const matchesFilter = filter === 'all' || res.type === filter;
@@ -160,7 +128,7 @@ const DocumentsPage = () => {
             <ArrowLeft size={24} />
           </button>
           <h1 className="text-lg sm:text-2xl font-bold text-gray-800 tracking-tight">
-            Biblioteca Publica
+            Biblioteca de Recursos
           </h1>
         </div>
 
@@ -176,7 +144,7 @@ const DocumentsPage = () => {
               }`}
               type="button"
             >
-              {t === 'all' ? 'Todos' : t === 'video' ? 'Videos' : 'Documentos'}
+              {t === 'all' ? 'Todos' : t === 'video' ? 'Videos' : 'Recursos'}
             </button>
           ))}
         </div>
@@ -211,7 +179,14 @@ const DocumentsPage = () => {
           {filteredResources.map((res) => (
             <div
               key={res.id}
-              className="group bg-white rounded-[2.5rem] overflow-hidden border border-gray-100 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col sm:flex-row h-full"
+              onClick={() => {
+                if (res.fileUrl) {
+                  window.open(res.fileUrl, '_blank', 'noopener,noreferrer');
+                }
+              }}
+              className={`group bg-white rounded-[2.5rem] overflow-hidden border border-gray-100 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col sm:flex-row h-full ${
+                res.fileUrl ? 'cursor-pointer' : 'cursor-default'
+              }`}
             >
               <div className="relative w-full sm:w-56 h-48 sm:h-auto overflow-hidden flex-shrink-0">
                 <img
@@ -265,41 +240,25 @@ const DocumentsPage = () => {
 
                 <div className="flex items-center gap-3">
                   {res.fileUrl ? (
-                    <a
-                      href={res.fileUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex-grow bg-gray-50 hover:bg-blue-600 hover:text-white text-blue-600 font-black py-3 px-4 rounded-xl transition-all flex items-center justify-center gap-2 group/btn"
-                    >
-                      <span>{res.type === 'video' ? 'Ver Video' : 'Leer PDF'}</span>
-                      <ExternalLink size={16} />
-                    </a>
-                  ) : (
                     <button
                       type="button"
-                      disabled
-                      className="flex-grow bg-gray-100 text-gray-400 font-black py-3 px-4 rounded-xl transition-all flex items-center justify-center gap-2 cursor-not-allowed"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        window.open(getDownloadUrl(res.fileUrl), '_blank', 'noopener,noreferrer');
+                      }}
+                      className="w-full bg-gray-50 hover:bg-blue-600 hover:text-white text-blue-600 font-black py-3 px-4 rounded-xl transition-all flex items-center justify-center gap-2"
                     >
-                      <span>{res.type === 'video' ? 'Ver Video' : 'Leer PDF'}</span>
-                      <ExternalLink size={16} />
+                      <Download size={18} />
+                      <span>Descargar</span>
                     </button>
-                  )}
-
-                  {res.fileUrl ? (
-                    <a
-                      href={res.fileUrl}
-                      download
-                      className="p-3 bg-gray-50 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"
-                    >
-                      <Download size={20} />
-                    </a>
                   ) : (
                     <button
                       type="button"
                       disabled
-                      className="p-3 bg-gray-100 text-gray-300 rounded-xl transition-all cursor-not-allowed"
+                      className="w-full bg-gray-100 text-gray-400 font-black py-3 px-4 rounded-xl transition-all flex items-center justify-center gap-2 cursor-not-allowed"
                     >
-                      <Download size={20} />
+                      <Download size={18} />
+                      <span>Descargar</span>
                     </button>
                   )}
                 </div>
@@ -308,7 +267,13 @@ const DocumentsPage = () => {
           ))}
         </div>
 
-        {filteredResources.length === 0 && (
+        {resources.length === 0 && (
+          <div className="text-center py-20">
+            <h4 className="text-3xl font-black text-gray-800">No hay recursos por ahora</h4>
+          </div>
+        )}
+
+        {resources.length > 0 && filteredResources.length === 0 && (
           <div className="text-center py-20">
             <div className="bg-white w-20 h-20 rounded-3xl flex items-center justify-center text-gray-200 mx-auto mb-6">
               <Search size={40} />

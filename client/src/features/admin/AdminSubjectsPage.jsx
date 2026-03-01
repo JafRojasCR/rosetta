@@ -181,7 +181,6 @@ const AdminSubjectsPage = () => {
             <h1 className="text-lg sm:text-2xl font-bold text-gray-800 tracking-tight">
               Administrar materias
             </h1>
-            <p className="text-sm text-gray-500">Panel preliminar de materias</p>
           </div>
         </div>
         <div className="w-12 h-12 bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center">

@@ -18,6 +18,12 @@ const documentSchema = new mongoose.Schema(
       trim: true,
       default: '',
     },
+    type: {
+      type: String,
+      enum: ['pdf', 'video'],
+      default: 'pdf',
+      required: true,
+    },
     date: {
       type: Date,
       required: true,
@@ -27,6 +33,11 @@ const documentSchema = new mongoose.Schema(
       type: String,
       required: true,
       trim: true,
+    },
+    driveFileId: {
+      type: String,
+      trim: true,
+      default: '',
     },
     subject: {
       subjectId: { type: String, required: true },
