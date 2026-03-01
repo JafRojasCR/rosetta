@@ -103,6 +103,12 @@ const buildSecurePlayerHtml = (streamUrl) => `<!doctype html>
         .volume-wrap {
           display: none;
         }
+        .player-shell.mobile-fullscreen .time {
+          display: block;
+        }
+        .player-shell.mobile-fullscreen .volume-wrap {
+          display: flex;
+        }
       }
     </style>
   </head>
@@ -141,7 +147,12 @@ const buildSecurePlayerHtml = (streamUrl) => `<!doctype html>
       const volume = document.getElementById('volume');
       const controls = document.querySelector('.controls');
       const videoWrap = document.querySelector('.video-wrap');
+      const playerShell = document.querySelector('.player-shell');
+      const isMobileViewport = window.matchMedia('(max-width: 768px)').matches;
       let controlsHideTimer = null;
+      let mobileFullscreenActive = false;
+      let previousOrientationType = null;
+      let previousScrollY = 0;
 
       video.src = ${JSON.stringify(streamUrl)};
       video.volume = 1;
@@ -185,6 +196,43 @@ const buildSecurePlayerHtml = (streamUrl) => `<!doctype html>
         scheduleControlsHide();
       };
 
+      const setMobileFullscreenMode = (active) => {
+        if (!isMobileViewport) return;
+        if (active) {
+          playerShell.classList.add('mobile-fullscreen');
+        } else {
+          playerShell.classList.remove('mobile-fullscreen');
+        }
+      };
+
+      const lockLandscape = async () => {
+        try {
+          await screen.orientation?.lock?.('landscape');
+        } catch (_) {
+          // no-op: some browsers block orientation lock
+        }
+      };
+
+      const restoreOrientation = async () => {
+        try {
+          if (previousOrientationType && previousOrientationType.startsWith('portrait')) {
+            await screen.orientation?.lock?.(previousOrientationType);
+            return;
+          }
+          await screen.orientation?.lock?.('portrait-primary');
+        } catch (_) {
+          // no-op: some browsers block orientation lock
+        }
+      };
+
+      const enforceLandscapeWhileFullscreen = async () => {
+        if (!mobileFullscreenActive || !isMobileViewport) return;
+        const orientationType = screen.orientation?.type || '';
+        if (orientationType.startsWith('portrait')) {
+          await lockLandscape();
+        }
+      };
+
       playBtn.addEventListener('click', () => {
         if (video.paused) {
           video.play();
@@ -220,11 +268,18 @@ const buildSecurePlayerHtml = (streamUrl) => `<!doctype html>
         wakeControls();
       });
 
-      fullBtn.addEventListener('click', () => {
+      fullBtn.addEventListener('click', async () => {
         if (!document.fullscreenElement) {
-          document.documentElement.requestFullscreen?.();
+          previousOrientationType = screen.orientation?.type || null;
+          previousScrollY = window.scrollY || 0;
+          await (playerShell.requestFullscreen?.() || document.documentElement.requestFullscreen?.());
+          if (isMobileViewport) {
+            mobileFullscreenActive = true;
+            setMobileFullscreenMode(true);
+            await lockLandscape();
+          }
         } else {
-          document.exitFullscreen?.();
+          await document.exitFullscreen?.();
         }
         wakeControls();
       });
@@ -233,7 +288,26 @@ const buildSecurePlayerHtml = (streamUrl) => `<!doctype html>
       videoWrap.addEventListener('mousemove', wakeControls);
       controls.addEventListener('mousemove', wakeControls);
       document.addEventListener('touchstart', wakeControls, { passive: true });
-      document.addEventListener('fullscreenchange', wakeControls);
+      document.addEventListener('fullscreenchange', async () => {
+        const isFullscreen = Boolean(document.fullscreenElement);
+
+        if (!isFullscreen) {
+          setMobileFullscreenMode(false);
+          if (mobileFullscreenActive) {
+            mobileFullscreenActive = false;
+            await restoreOrientation();
+            window.scrollTo({ top: previousScrollY, behavior: 'auto' });
+          }
+        } else if (isMobileViewport) {
+          setMobileFullscreenMode(true);
+        }
+
+        wakeControls();
+      });
+
+      window.addEventListener('orientationchange', enforceLandscapeWhileFullscreen);
+      window.addEventListener('resize', enforceLandscapeWhileFullscreen);
+      screen.orientation?.addEventListener?.('change', enforceLandscapeWhileFullscreen);
 
       document.addEventListener('contextmenu', function (event) { event.preventDefault(); });
       document.addEventListener('keydown', function (event) {

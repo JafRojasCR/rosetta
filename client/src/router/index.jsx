@@ -18,6 +18,7 @@ import AdminUsersPage from '../features/admin/AdminUsersPage';
 import AdminSubjectsPage from '../features/admin/AdminSubjectsPage';
 import SettingsPage from '../features/settings/SettingsPage';
 import ProfilePage from '../features/profile/ProfilePage';
+import NotFoundPage from '../features/not-found/NotFoundPage';
 
 const AppRouter = () => {
   return (
@@ -169,7 +170,7 @@ const AppRouter = () => {
 
       {/* Redirecciones */}
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );
 };
