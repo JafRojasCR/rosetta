@@ -144,11 +144,30 @@ const DocumentsPage = () => {
               }`}
               type="button"
             >
-              {t === 'all' ? 'Todos' : t === 'video' ? 'Videos' : 'Recursos'}
+              {t === 'all' ? 'Todos' : t === 'video' ? 'Videos' : 'Docs'}
             </button>
           ))}
         </div>
       </nav>
+
+      <div className="md:hidden px-4 sm:px-6 pt-4">
+        <div className="bg-white p-1 rounded-2xl border border-gray-100 flex">
+          {['all', 'video', 'pdf'].map((t) => (
+            <button
+              key={t}
+              onClick={() => setFilter(t)}
+              className={`flex-1 px-3 py-2 rounded-xl text-xs font-black transition-all uppercase tracking-widest ${
+                filter === t
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-100'
+                  : 'text-gray-400 hover:text-gray-600'
+              }`}
+              type="button"
+            >
+              {t === 'all' ? 'Todos' : t === 'video' ? 'Videos' : 'Docs'}
+            </button>
+          ))}
+        </div>
+      </div>
 
       <div className="max-w-6xl w-full mx-auto px-4 sm:px-6 pt-10">
         <div className="relative group">

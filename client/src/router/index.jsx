@@ -100,7 +100,7 @@ const AppRouter = () => {
         }
       />
       <Route
-        path="/recursos/admin"
+        path="/admin/recursos"
         element={
           <ProtectedRoute requiredRole="admin">
             <AdminDocumentsPage />

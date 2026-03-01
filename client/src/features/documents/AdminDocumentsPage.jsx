@@ -143,20 +143,18 @@ const AdminDocumentsPage = () => {
             <p className="text-sm text-gray-500">Panel de gestión de recursos</p>
           </div>
         </div>
+        <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center">
+          <UploadCloud size={26} />
+        </div>
       </nav>
 
       <div className="max-w-3xl mx-auto px-4 sm:px-6 py-10">
         <div className="bg-white rounded-[2.5rem] p-8 sm:p-10 shadow-sm border border-gray-100">
-          <div className="flex items-center gap-3 mb-8">
-            <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center">
-              <UploadCloud size={26} />
-            </div>
-            <div>
-              <h2 className="text-xl font-extrabold text-gray-900">Carga de documentos</h2>
-              <p className="text-sm text-gray-500">
-                Carga recursos en PDF o video para tus estudiantes.
-              </p>
-            </div>
+          <div className="mb-8">
+            <h2 className="text-xl font-extrabold text-gray-900">Carga de documentos</h2>
+            <p className="text-sm text-gray-500">
+              Carga recursos en PDF o video para tus estudiantes.
+            </p>
           </div>
 
           {error && (
