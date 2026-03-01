@@ -1,54 +1,52 @@
-import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { ArrowLeft, BookOpen, Calendar, ChevronDown, Lock, Search, Unlock } from 'lucide-react';
 import api from '../../services/api';
 import LoadingSpinner from '../../components/LoadingSpinner';
+import useAuth from '../../hooks/useAuth';
 
-const ClassCard = ({ cls }) => (
-  <Link
-    to={`/clases/${cls.classCode}`}
-    className="block bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-all hover:-translate-y-0.5"
-  >
-    <div className="flex items-start justify-between mb-3">
-      <span className="text-xs font-medium bg-blue-50 text-blue-600 px-2 py-1 rounded-full">
-        {cls.subject?.name || 'Sin materia'}
-      </span>
-      <span className="text-xs text-gray-400">
-        {new Date(cls.date).toLocaleDateString('es-CR')}
-      </span>
-    </div>
-    <h3 className="font-semibold text-gray-800 mb-1">{cls.title}</h3>
-    <p className="text-sm text-gray-500 line-clamp-2">{cls.description}</p>
-    <div className="mt-3 flex items-center justify-between">
-      <span className="text-sm font-medium text-green-600">
-        ₡{cls.price?.toLocaleString('es-CR')}
-      </span>
-      {cls.isPublic ? (
-        <span className="text-xs bg-green-50 text-green-600 px-2 py-0.5 rounded-full">Pública</span>
-      ) : (
-        <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">De pago</span>
-      )}
-    </div>
-  </Link>
-);
+const formatDayMonth = (dateValue) => {
+  if (!dateValue) return '--/--';
+  const date = new Date(dateValue);
+  if (Number.isNaN(date.getTime())) return '--/--';
+  return `${date.getUTCDate()}/${date.getUTCMonth() + 1}`;
+};
+
+const formatRightDate = (dateValue) => {
+  if (!dateValue) return '--/--/----';
+  const date = new Date(dateValue);
+  if (Number.isNaN(date.getTime())) return '--/--/----';
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const year = date.getUTCFullYear();
+  return `${day}/${month}/${year}`;
+};
 
 const ClassesPage = () => {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const userEmail = String(user?.email || '').toLowerCase();
+
+  const [isVisible, setIsVisible] = useState(false);
   const [classes, setClasses] = useState([]);
+  const [expandedId, setExpandedId] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [iframeUrls, setIframeUrls] = useState({});
+  const [loadingIframeByClass, setLoadingIframeByClass] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [subjectFilter, setSubjectFilter] = useState('');
-  const [subjects, setSubjects] = useState([]);
+
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setIsVisible(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
 
   useEffect(() => {
     const fetchClasses = async () => {
       try {
-        const params = subjectFilter ? { subjectId: subjectFilter } : {};
-        const response = await api.get('/classes', { params });
+        const response = await api.get('/classes');
         const data = response.data.data;
         setClasses(data);
-
-        // Extraer materias únicas para el filtro
-        const uniqueSubjects = [...new Map(data.map((c) => [c.subject?.subjectId, c.subject])).values()].filter(Boolean);
-        setSubjects(uniqueSubjects);
       } catch (err) {
         setError('Error al cargar las clases');
       } finally {
@@ -56,47 +54,234 @@ const ClassesPage = () => {
       }
     };
     fetchClasses();
-  }, [subjectFilter]);
+  }, []);
+
+  const classesForStudent = useMemo(() => {
+    const enriched = (classes || []).map((cls) => {
+      const classStudents = cls.classStudents || [];
+      const unlocked = classStudents.some(
+        (entry) =>
+          entry?.student?.email?.toLowerCase() === userEmail &&
+          entry?.unlocked === true
+      );
+
+      const dayMonth = formatDayMonth(cls.date);
+      const title = String(cls.title || '').trim();
+
+      return {
+        ...cls,
+        isLocked: !unlocked,
+        displayDateShort: dayMonth,
+        displayDateLong: formatRightDate(cls.date),
+        displayTitle: `Clase ${dayMonth}: ${title.toUpperCase()}`,
+      };
+    });
+
+    return enriched
+      .filter((cls) => {
+        const q = searchQuery.trim().toLowerCase();
+        if (!q) return true;
+        const searchable = `${cls.displayTitle} ${cls.displayDateShort}`.toLowerCase();
+        return searchable.includes(q);
+      })
+      .sort((a, b) => new Date(b.date) - new Date(a.date));
+  }, [classes, userEmail, searchQuery]);
+
+  const handleToggleClass = async (cls) => {
+    if (cls.isLocked) return;
+
+    const nextExpanded = expandedId === cls.classCode ? '' : cls.classCode;
+    setExpandedId(nextExpanded);
+
+    if (!nextExpanded || iframeUrls[cls.classCode] || !cls.recordingUrl) {
+      return;
+    }
+
+    setLoadingIframeByClass((prev) => ({ ...prev, [cls.classCode]: true }));
+    try {
+      const response = await api.get(`/classes/${cls.classCode}/embed-token`);
+      const iframeUrl = response.data.data?.iframeUrl || '';
+      setIframeUrls((prev) => ({ ...prev, [cls.classCode]: iframeUrl }));
+    } catch (_requestError) {
+      setError('No se pudo cargar el reproductor de la clase.');
+    } finally {
+      setLoadingIframeByClass((prev) => ({ ...prev, [cls.classCode]: false }));
+    }
+  };
 
   if (loading) return <LoadingSpinner />;
 
   return (
-    <div>
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Clases</h1>
-          <p className="text-gray-500 text-sm">{classes.length} clases disponibles</p>
+    <div
+      className={`min-h-screen bg-gray-100 font-['Poppins'] flex flex-col transform transition-all duration-700 ease-out ${
+        isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
+      }`}
+    >
+      <style>
+        {`@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap');`}
+      </style>
+
+      <nav className="bg-white px-4 sm:px-8 py-4 flex items-center justify-between shadow-sm z-10">
+        <div className="flex items-center gap-4">
+          <button
+            onClick={() => navigate(-1)}
+            className="p-2 hover:bg-gray-100 rounded-full text-gray-600 transition-colors"
+            type="button"
+          >
+            <ArrowLeft size={24} />
+          </button>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-800 tracking-tight">Clases</h1>
         </div>
-        <select
-          value={subjectFilter}
-          onChange={(e) => setSubjectFilter(e.target.value)}
-          className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-        >
-          <option value="">Todas las materias</option>
-          {subjects.map((s) => (
-            <option key={s.subjectId} value={s.subjectId}>
-              {s.name}
-            </option>
-          ))}
-        </select>
+      </nav>
+
+      <div className="max-w-5xl w-full mx-auto px-4 sm:px-6 pt-8">
+        <div className="relative group">
+          <div className="absolute inset-y-0 left-6 flex items-center pointer-events-none">
+            <Search
+              className="text-gray-400 group-focus-within:text-blue-500 transition-colors"
+              size={20}
+            />
+          </div>
+          <input
+            type="text"
+            placeholder="Buscar por título o fecha (ej: 19/2)..."
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            className="w-full bg-white border-2 border-transparent focus:border-blue-500 rounded-[2rem] pl-14 pr-6 py-4 shadow-sm text-base font-medium outline-none transition-all"
+          />
+        </div>
       </div>
 
       {error && (
-        <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-4">{error}</div>
+        <div className="max-w-5xl w-full mx-auto px-4 sm:px-6 mt-6">
+          <div className="bg-red-50 text-red-600 p-4 rounded-2xl font-semibold">{error}</div>
+        </div>
       )}
 
-      {classes.length === 0 ? (
-        <div className="text-center py-12 text-gray-400">
-          <p className="text-4xl mb-3">🎓</p>
-          <p>No hay clases disponibles</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          {classes.map((cls) => (
-            <ClassCard key={cls.classCode} cls={cls} />
-          ))}
-        </div>
-      )}
+      <main className="max-w-5xl w-full mx-auto px-4 sm:px-6 py-8 space-y-4">
+        {classesForStudent.length === 0 ? (
+          <div className="bg-white rounded-[2rem] p-10 border border-gray-100 text-center text-gray-400 font-semibold">
+            No se encontraron clases con ese criterio.
+          </div>
+        ) : (
+          classesForStudent.map((cls) => (
+            <div
+              key={cls.classCode}
+              className={`bg-white rounded-[2rem] border-2 transition-all duration-300 overflow-hidden ${
+                expandedId === cls.classCode
+                  ? 'border-blue-500 shadow-xl'
+                  : 'border-transparent shadow-sm hover:border-gray-200'
+              }`}
+            >
+              <div
+                onClick={() => handleToggleClass(cls)}
+                className={`p-6 flex items-center justify-between transition-colors duration-300 ${
+                  cls.isLocked ? 'opacity-60 grayscale bg-gray-50 cursor-not-allowed' : 'cursor-pointer hover:bg-blue-50/30'
+                }`}
+              >
+                <div className="flex items-center gap-5">
+                  <div
+                    className={`p-4 rounded-2xl ${
+                      cls.isLocked ? 'bg-gray-200 text-gray-500' : 'bg-blue-50 text-blue-600'
+                    }`}
+                  >
+                    {cls.isLocked ? <Lock size={22} /> : <Unlock size={22} />}
+                  </div>
+
+                  <div>
+                    <h3 className="text-lg sm:text-xl font-black text-gray-900 leading-tight">
+                      {cls.displayTitle}
+                    </h3>
+                    <span className="text-xs font-black text-blue-600 uppercase tracking-widest">
+                      {cls.subject?.name || 'Sin materia'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-4">
+                  <span className="hidden sm:flex items-center gap-1.5 text-gray-400 font-bold text-sm tracking-tight">
+                    <Calendar size={14} />
+                    {cls.displayDateLong}
+                  </span>
+                  <div
+                    className={`transition-all duration-300 ${
+                      expandedId === cls.classCode ? 'rotate-180 text-blue-600' : 'text-gray-300'
+                    }`}
+                  >
+                    <ChevronDown size={26} />
+                  </div>
+                </div>
+              </div>
+
+              {expandedId === cls.classCode && !cls.isLocked && (
+                <div className="p-6 pt-0">
+                  <div className="w-full h-px bg-gray-100 mb-6" />
+
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                    <div className="lg:col-span-7 relative">
+                      <div className="aspect-video rounded-3xl overflow-hidden border border-gray-100 bg-gray-900 shadow-inner">
+                        {loadingIframeByClass[cls.classCode] ? (
+                          <div className="w-full h-full flex items-center justify-center text-white/90 font-bold">
+                            Cargando video...
+                          </div>
+                        ) : iframeUrls[cls.classCode] ? (
+                          <iframe
+                            src={iframeUrls[cls.classCode]}
+                            title={`Video ${cls.displayTitle}`}
+                            className="w-full h-full border-0"
+                            sandbox="allow-same-origin allow-scripts"
+                            allow="autoplay; encrypted-media"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-white/90 font-bold">
+                            Video no disponible
+                          </div>
+                        )}
+                      </div>
+
+                      {cls.canvaUrl && (
+                        <a
+                          href={cls.canvaUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="absolute bottom-3 right-3 bg-white p-2 rounded-xl shadow-lg hover:scale-105 transition-transform"
+                          title="Abrir Canva"
+                        >
+                          <img src="/canvaicon.png" alt="Canva" className="w-7 h-7 object-contain" />
+                        </a>
+                      )}
+                    </div>
+
+                    <div className="lg:col-span-5 flex flex-col gap-3">
+                      <div className="flex items-center gap-3 text-gray-700 bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                        <BookOpen size={18} className="text-blue-500" />
+                        <span className="text-sm font-bold tracking-tight">
+                          Materia: {cls.subject?.name || 'Sin materia'}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-3 text-gray-700 bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                        <Calendar size={18} className="text-blue-500" />
+                        <span className="text-sm font-bold tracking-tight">
+                          Fecha: {cls.displayDateLong}
+                        </span>
+                      </div>
+
+                      <div className="text-gray-500 font-medium leading-relaxed text-sm bg-white border border-gray-100 rounded-2xl p-4">
+                        {cls.description || 'Sin descripcion registrada.'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))
+        )}
+      </main>
+
+      <footer className="py-8 text-center text-gray-400 text-sm border-t border-gray-100 bg-white/60 mt-auto">
+        © 2026 Rosetta - Plataforma de Aula Virtual
+      </footer>
     </div>
   );
 };

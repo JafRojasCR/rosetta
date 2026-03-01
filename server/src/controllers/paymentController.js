@@ -97,6 +97,9 @@ const updatePaymentStatus = async (req, res) => {
           (entry) => entry.student?.email?.toLowerCase() === payment.studentEmail.toLowerCase()
         );
 
+        const existingEntry = existingIndex >= 0 ? cls.classStudents[existingIndex] : null;
+        const unlockedAt = payment.date || new Date();
+
         const studentEntry = {
           student: {
             id: student._id,
@@ -105,7 +108,10 @@ const updatePaymentStatus = async (req, res) => {
             lastName: student.lastName,
             phone: student.phone || '',
           },
-          paymentDate: payment.date || new Date(),
+          type: existingEntry?.type === 'tutored' ? 'tutored' : 'normal',
+          unlocked: true,
+          unlockedAt,
+          paymentDate: unlockedAt,
         };
 
         if (existingIndex >= 0) {

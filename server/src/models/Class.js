@@ -81,10 +81,22 @@ const classSchema = new mongoose.Schema(
             default: '',
           },
         },
+        type: {
+          type: String,
+          enum: ['normal', 'tutored'],
+          default: 'normal',
+        },
+        unlocked: {
+          type: Boolean,
+          default: false,
+        },
+        unlockedAt: {
+          type: Date,
+          default: null,
+        },
         paymentDate: {
           type: Date,
-          required: true,
-          default: Date.now,
+          default: null,
         },
       },
     ],

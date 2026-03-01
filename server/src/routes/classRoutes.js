@@ -6,11 +6,15 @@ const {
   createClass,
   updateClass,
   deleteClass,
+  getClassEmbedToken,
+  getClassEmbedByToken,
 } = require('../controllers/classController');
 const { protect, adminOnly, optionalAuth } = require('../middlewares/authMiddleware');
 const uploadClassFiles = require('../middlewares/uploadClassFiles');
 
 router.get('/', getClasses);
+router.get('/embed/:token', getClassEmbedByToken);
+router.get('/:classCode/embed-token', protect, getClassEmbedToken);
 router.get('/:classCode', optionalAuth, getClassByCode);
 router.post(
   '/',

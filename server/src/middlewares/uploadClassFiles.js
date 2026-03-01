@@ -1,6 +1,6 @@
 const multer = require('multer');
 const path = require('path');
-const { uploadDir } = require('../config/env');
+const { uploadDir, classUploadMaxFileSizeMb } = require('../config/env');
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -33,7 +33,7 @@ const fileFilter = (req, file, cb) => {
 const uploadClassFiles = multer({
   storage,
   fileFilter,
-  limits: { fileSize: 200 * 1024 * 1024 },
+  limits: { fileSize: classUploadMaxFileSizeMb * 1024 * 1024 },
 });
 
 module.exports = uploadClassFiles;

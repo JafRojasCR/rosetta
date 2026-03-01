@@ -15,6 +15,11 @@ const uploadDir = isVercel
   ? '/tmp/uploads'
   : rawUploadDir.replace(/[^a-zA-Z0-9_\-/]/g, '').replace(/^\/+/, '') || 'uploads';
 
+const parsedClassUploadMaxMb = Number(process.env.CLASS_UPLOAD_MAX_FILE_SIZE_MB);
+const classUploadMaxFileSizeMb = Number.isFinite(parsedClassUploadMaxMb) && parsedClassUploadMaxMb > 0
+  ? parsedClassUploadMaxMb
+  : 2048;
+
 module.exports = {
   port: process.env.PORT || 3000,
   mongodbUri: process.env.MONGODB_URI || 'mongodb://localhost:27017/rosetta',
@@ -24,6 +29,7 @@ module.exports = {
   emailUser: process.env.EMAIL_USER || '',
   emailPass: process.env.EMAIL_PASS || '',
   uploadDir,
+  classUploadMaxFileSizeMb,
   isVercel,
   googleDriveEnabled:
     process.env.GOOGLE_DRIVE_ENABLED === '1' || process.env.GOOGLE_DRIVE_ENABLED === 'true',
@@ -33,4 +39,6 @@ module.exports = {
     process.env.GOOGLE_DRIVE_REDIRECT_URI || 'https://developers.google.com/oauthplayground',
   googleDriveRefreshToken: process.env.GOOGLE_DRIVE_REFRESH_TOKEN || '',
   googleDriveFolderId: process.env.GOOGLE_DRIVE_FOLDER_ID || '',
+  googleDriveClassesVideosFolderId:
+    process.env.GOOGLE_DRIVE_CLASSES_VIDEOS_FOLDER_ID || '16GFwAhMJ1TpPH0hcUQWmp9v6MkBDV5lW',
 };

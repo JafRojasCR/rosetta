@@ -35,19 +35,20 @@ const getDriveClient = () => {
   return google.drive({ version: 'v3', auth });
 };
 
-const uploadFileToGoogleDrive = async ({ filePath, fileName, mimeType }) => {
+const uploadFileToGoogleDrive = async ({ filePath, fileName, mimeType, folderId }) => {
   if (!googleDriveEnabled) {
     return { uploaded: false, fileUrl: null, fileId: null };
   }
 
   const drive = getDriveClient();
+  const targetFolderId = folderId || googleDriveFolderId;
 
   let created;
   try {
     created = await drive.files.create({
       requestBody: {
         name: fileName,
-        parents: [googleDriveFolderId],
+        parents: [targetFolderId],
       },
       media: {
         mimeType,
