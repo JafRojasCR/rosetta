@@ -11,6 +11,12 @@ import ClassDetailPage from '../features/classes/ClassDetailPage';
 import PaymentsPage from '../features/payments/PaymentsPage';
 import PaymentFormPage from '../features/payments/PaymentFormPage';
 import DocumentsPage from '../features/documents/DocumentsPage';
+import AdminDocumentsPage from '../features/documents/AdminDocumentsPage';
+import AdminClassesPage from '../features/admin/AdminClassesPage';
+import AdminPaymentsPage from '../features/admin/AdminPaymentsPage';
+import AdminUsersPage from '../features/admin/AdminUsersPage';
+import AdminSubjectsPage from '../features/admin/AdminSubjectsPage';
+import SettingsPage from '../features/settings/SettingsPage';
 import ProfilePage from '../features/profile/ProfilePage';
 
 const AppRouter = () => {
@@ -90,6 +96,54 @@ const AppRouter = () => {
             <MainLayout>
               <DocumentsPage />
             </MainLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/documentos/admin"
+        element={
+          <ProtectedRoute>
+            <AdminDocumentsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/clases"
+        element={
+          <ProtectedRoute>
+            <AdminClassesPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/pagos"
+        element={
+          <ProtectedRoute>
+            <AdminPaymentsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/usuarios"
+        element={
+          <ProtectedRoute>
+            <AdminUsersPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/materias"
+        element={
+          <ProtectedRoute>
+            <AdminSubjectsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/configuracion"
+        element={
+          <ProtectedRoute>
+            <SettingsPage />
           </ProtectedRoute>
         }
       />
