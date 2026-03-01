@@ -128,7 +128,7 @@ const DocumentsPage = () => {
             <ArrowLeft size={24} />
           </button>
           <h1 className="text-lg sm:text-2xl font-bold text-gray-800 tracking-tight">
-            Biblioteca de Recursos
+            Recursos
           </h1>
         </div>
 
@@ -150,25 +150,6 @@ const DocumentsPage = () => {
         </div>
       </nav>
 
-      <div className="md:hidden px-4 sm:px-6 pt-4">
-        <div className="bg-white p-1 rounded-2xl border border-gray-100 flex">
-          {['all', 'video', 'pdf'].map((t) => (
-            <button
-              key={t}
-              onClick={() => setFilter(t)}
-              className={`flex-1 px-3 py-2 rounded-xl text-xs font-black transition-all uppercase tracking-widest ${
-                filter === t
-                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-100'
-                  : 'text-gray-400 hover:text-gray-600'
-              }`}
-              type="button"
-            >
-              {t === 'all' ? 'Todos' : t === 'video' ? 'Videos' : 'Docs'}
-            </button>
-          ))}
-        </div>
-      </div>
-
       <div className="max-w-6xl w-full mx-auto px-4 sm:px-6 pt-10">
         <div className="relative group">
           <div className="absolute inset-y-0 left-6 flex items-center pointer-events-none">
@@ -179,11 +160,30 @@ const DocumentsPage = () => {
           </div>
           <input
             type="text"
-            placeholder="Buscar por titulo, autor o categoria..."
+            placeholder="Buscar por titulo..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-white border-2 border-transparent focus:border-blue-500 rounded-[2rem] pl-16 pr-8 py-5 shadow-sm text-lg font-medium outline-none transition-all"
           />
+        </div>
+
+        <div className="md:hidden mt-4">
+          <div className="bg-white p-1 rounded-2xl border border-gray-100 flex">
+            {['all', 'video', 'pdf'].map((t) => (
+              <button
+                key={t}
+                onClick={() => setFilter(t)}
+                className={`flex-1 px-3 py-2 rounded-xl text-xs font-black transition-all uppercase tracking-widest ${
+                  filter === t
+                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-100'
+                    : 'text-gray-400 hover:text-gray-600'
+                }`}
+                type="button"
+              >
+                {t === 'all' ? 'Todos' : t === 'video' ? 'Videos' : 'Docs'}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, BookOpen, Calendar, ChevronDown, Lock, Search, Unlock } from 'lucide-react';
+import { ArrowLeft, ArrowUp, BookOpen, Calendar, ChevronDown, Lock, Search, Unlock } from 'lucide-react';
 import api from '../../services/api';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import useAuth from '../../hooks/useAuth';
@@ -31,14 +31,26 @@ const ClassesPage = () => {
   const [classes, setClasses] = useState([]);
   const [expandedId, setExpandedId] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState('date');
+  const [sortOrder, setSortOrder] = useState('desc');
+  const [isAnimating, setIsAnimating] = useState(false);
   const [iframeUrls, setIframeUrls] = useState({});
   const [loadingIframeByClass, setLoadingIframeByClass] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const sortAnimTimerRef = useRef(null);
 
   useEffect(() => {
     const id = requestAnimationFrame(() => setIsVisible(true));
     return () => cancelAnimationFrame(id);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (sortAnimTimerRef.current) {
+        clearTimeout(sortAnimTimerRef.current);
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -67,6 +79,10 @@ const ClassesPage = () => {
 
       const dayMonth = formatDayMonth(cls.date);
       const title = String(cls.title || '').trim();
+      const tutoredEntry = classStudents.find((entry) => entry?.type === 'tutored');
+      const tutoredStudentName = tutoredEntry
+        ? `${tutoredEntry?.student?.name || ''} ${tutoredEntry?.student?.lastName || ''}`.trim()
+        : '';
 
       return {
         ...cls,
@@ -74,6 +90,7 @@ const ClassesPage = () => {
         displayDateShort: dayMonth,
         displayDateLong: formatRightDate(cls.date),
         displayTitle: `Clase ${dayMonth}: ${title.toUpperCase()}`,
+        tutoredStudentName,
       };
     });
 
@@ -84,8 +101,43 @@ const ClassesPage = () => {
         const searchable = `${cls.displayTitle} ${cls.displayDateShort}`.toLowerCase();
         return searchable.includes(q);
       })
-      .sort((a, b) => new Date(b.date) - new Date(a.date));
-  }, [classes, userEmail, searchQuery]);
+      .sort((a, b) => {
+        let comparison = 0;
+
+        if (sortBy === 'date') {
+          comparison = new Date(a.date) - new Date(b.date);
+        }
+
+        if (sortBy === 'subject') {
+          comparison = String(a.subject?.name || '').localeCompare(String(b.subject?.name || ''));
+        }
+
+        if (sortBy === 'status') {
+          comparison = a.isLocked === b.isLocked ? 0 : a.isLocked ? 1 : -1;
+        }
+
+        return sortOrder === 'desc' ? comparison * -1 : comparison;
+      });
+  }, [classes, userEmail, searchQuery, sortBy, sortOrder]);
+
+  const handleSort = (type) => {
+    setIsAnimating(true);
+
+    if (sortBy === type) {
+      setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortBy(type);
+      setSortOrder('desc');
+    }
+
+    if (sortAnimTimerRef.current) {
+      clearTimeout(sortAnimTimerRef.current);
+    }
+
+    sortAnimTimerRef.current = setTimeout(() => {
+      setIsAnimating(false);
+    }, 400);
+  };
 
   const handleToggleClass = async (cls) => {
     if (cls.isLocked) return;
@@ -132,6 +184,49 @@ const ClassesPage = () => {
           </button>
           <h1 className="text-xl sm:text-2xl font-bold text-gray-800 tracking-tight">Clases</h1>
         </div>
+
+        <div className="hidden md:inline-flex bg-gray-50 p-1.5 rounded-2xl border border-gray-100">
+          {[
+            { id: 'date', label: 'Fecha', icon: <Calendar size={14} /> },
+            { id: 'subject', label: 'Materia', icon: <BookOpen size={14} /> },
+            { id: 'status', label: 'Estado', icon: <Lock size={14} /> },
+          ].map((item) => {
+            const isActive = sortBy === item.id;
+
+            return (
+              <button
+                key={item.id}
+                onClick={() => handleSort(item.id)}
+                className={`group flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all duration-300 whitespace-nowrap relative overflow-hidden ${
+                  isActive
+                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-200'
+                    : 'text-gray-400 hover:text-gray-600 hover:bg-white'
+                }`}
+                type="button"
+              >
+                <span className={`transition-transform duration-300 ${isActive ? 'scale-110' : 'group-hover:scale-110'}`}>
+                  {item.icon}
+                </span>
+                {item.label}
+
+                <div
+                  className={`flex items-center transition-all duration-500 ease-in-out ${
+                    isActive ? 'w-4 opacity-100 ml-1' : 'w-0 opacity-0 ml-0'
+                  }`}
+                >
+                  <ArrowUp
+                    size={14}
+                    className={`transition-transform duration-500 ease-out ${
+                      sortOrder === 'desc' ? 'rotate-180' : 'rotate-0'
+                    }`}
+                  />
+                </div>
+
+                {isActive && <span className="absolute inset-0 bg-white/10 animate-pulse pointer-events-none" />}
+              </button>
+            );
+          })}
+        </div>
       </nav>
 
       <div className="max-w-5xl w-full mx-auto px-4 sm:px-6 pt-8">
@@ -144,11 +239,54 @@ const ClassesPage = () => {
           </div>
           <input
             type="text"
-            placeholder="Buscar por título o fecha (ej: 19/2)..."
+            placeholder="Buscar por título o fecha..."
             value={searchQuery}
             onChange={(event) => setSearchQuery(event.target.value)}
             className="w-full bg-white border-2 border-transparent focus:border-blue-500 rounded-[2rem] pl-14 pr-6 py-4 shadow-sm text-base font-medium outline-none transition-all"
           />
+        </div>
+
+        <div className="mt-4 md:hidden inline-flex bg-white p-1.5 rounded-2xl shadow-sm border border-gray-100 overflow-x-auto max-w-full">
+          {[
+            { id: 'date', label: 'Fecha', icon: <Calendar size={14} /> },
+            { id: 'subject', label: 'Materia', icon: <BookOpen size={14} /> },
+            { id: 'status', label: 'Estado', icon: <Lock size={14} /> },
+          ].map((item) => {
+            const isActive = sortBy === item.id;
+
+            return (
+              <button
+                key={item.id}
+                onClick={() => handleSort(item.id)}
+                className={`group flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all duration-300 whitespace-nowrap relative overflow-hidden ${
+                  isActive
+                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-200'
+                    : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
+                }`}
+                type="button"
+              >
+                <span className={`transition-transform duration-300 ${isActive ? 'scale-110' : 'group-hover:scale-110'}`}>
+                  {item.icon}
+                </span>
+                {item.label}
+
+                <div
+                  className={`flex items-center transition-all duration-500 ease-in-out ${
+                    isActive ? 'w-4 opacity-100 ml-1' : 'w-0 opacity-0 ml-0'
+                  }`}
+                >
+                  <ArrowUp
+                    size={14}
+                    className={`transition-transform duration-500 ease-out ${
+                      sortOrder === 'desc' ? 'rotate-180' : 'rotate-0'
+                    }`}
+                  />
+                </div>
+
+                {isActive && <span className="absolute inset-0 bg-white/10 animate-pulse pointer-events-none" />}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -158,7 +296,11 @@ const ClassesPage = () => {
         </div>
       )}
 
-      <main className="max-w-5xl w-full mx-auto px-4 sm:px-6 py-8 space-y-4">
+      <main
+        className={`max-w-5xl w-full mx-auto px-4 sm:px-6 py-8 space-y-4 transition-all duration-500 ${
+          isAnimating ? 'opacity-50 scale-[0.99] grayscale-[0.2]' : 'opacity-100 scale-100'
+        }`}
+      >
         {classesForStudent.length === 0 ? (
           <div className="bg-white rounded-[2rem] p-10 border border-gray-100 text-center text-gray-400 font-semibold">
             No se encontraron clases con ese criterio.
@@ -244,7 +386,7 @@ const ClassesPage = () => {
                           href={cls.canvaUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="absolute bottom-3 right-3 bg-white p-2 rounded-xl shadow-lg hover:scale-105 transition-transform"
+                          className="absolute top-3 right-3 bg-white p-2 rounded-xl shadow-lg hover:scale-105 transition-transform"
                           title="Abrir Canva"
                         >
                           <img src="/canvaicon.png" alt="Canva" className="w-7 h-7 object-contain" />
@@ -266,6 +408,15 @@ const ClassesPage = () => {
                           Fecha: {cls.displayDateLong}
                         </span>
                       </div>
+
+                      {cls.tutoredStudentName && (
+                        <div className="flex items-center gap-3 text-gray-700 bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                          <BookOpen size={18} className="text-blue-500" />
+                          <span className="text-sm font-bold tracking-tight">
+                            Estudiante: {cls.tutoredStudentName}
+                          </span>
+                        </div>
+                      )}
 
                       <div className="text-gray-500 font-medium leading-relaxed text-sm bg-white border border-gray-100 rounded-2xl p-4">
                         {cls.description || 'Sin descripcion registrada.'}

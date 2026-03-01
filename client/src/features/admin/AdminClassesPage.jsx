@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -19,10 +19,18 @@ import api from '../../services/api';
 
 const toDateInputValue = (value) => {
   if (!value) return '';
+
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return value;
+  }
+
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
-  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-  return localDate.toISOString().slice(0, 10);
+
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 };
 
 const padOrder = (value) => String(value).padStart(2, '0');
@@ -54,10 +62,6 @@ const INITIAL_FORM = {
   recordingFile: null,
 };
 
-const UPLOAD_MS_PER_MB = 60;
-const MIN_UPLOAD_PROGRESS_MS = 1200;
-const MAX_FINAL_PROGRESS_MS = 1000;
-
 const AdminClassesPage = () => {
   const navigate = useNavigate();
   const [isVisible, setIsVisible] = useState(false);
@@ -73,54 +77,10 @@ const AdminClassesPage = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [editingClassCode, setEditingClassCode] = useState('');
   const [busyClassCode, setBusyClassCode] = useState('');
-  const progressIntervalRef = useRef(null);
-
-  const clearProgressInterval = () => {
-    if (progressIntervalRef.current) {
-      clearInterval(progressIntervalRef.current);
-      progressIntervalRef.current = null;
-    }
-  };
-
-  const estimateUploadDurationMs = (file) => {
-    if (!file?.size) return MIN_UPLOAD_PROGRESS_MS;
-    const fileSizeMb = file.size / (1024 * 1024);
-    return Math.max(MIN_UPLOAD_PROGRESS_MS, Math.round(fileSizeMb * UPLOAD_MS_PER_MB));
-  };
-
-  const animateProgressTo = (target, durationMs) =>
-    new Promise((resolve) => {
-      const safeTarget = Math.max(0, Math.min(100, target));
-      const startValue = uploadProgress;
-
-      if (durationMs <= 0 || safeTarget <= startValue) {
-        setUploadProgress(safeTarget);
-        resolve();
-        return;
-      }
-
-      clearProgressInterval();
-      const startedAt = Date.now();
-      progressIntervalRef.current = setInterval(() => {
-        const elapsed = Date.now() - startedAt;
-        const ratio = Math.min(1, elapsed / durationMs);
-        const nextValue = Math.round(startValue + (safeTarget - startValue) * ratio);
-        setUploadProgress(nextValue);
-
-        if (ratio >= 1) {
-          clearProgressInterval();
-          resolve();
-        }
-      }, 40);
-    });
 
   useEffect(() => {
     const id = requestAnimationFrame(() => setIsVisible(true));
     return () => cancelAnimationFrame(id);
-  }, []);
-
-  useEffect(() => {
-    return () => clearProgressInterval();
   }, []);
 
   const loadClasses = async (params = {}) => {
@@ -160,21 +120,12 @@ const AdminClassesPage = () => {
   }, []);
 
   useEffect(() => {
-    const inferOrderFromBackend = async () => {
-      if (!form.date || isEditing) return;
-      try {
-        const classesForDate = await loadClasses({ date: form.date });
-        setForm((prev) => ({
-          ...prev,
-          order: padOrder(classesForDate.length + 1),
-        }));
-      } catch (_requestError) {
-        setForm((prev) => ({ ...prev, order: '01' }));
-      }
-    };
-
-    inferOrderFromBackend();
-  }, [form.date, isEditing]);
+    calculateOrderByDateAndSubject({
+      date: form.date,
+      subjectId: form.subjectId,
+      excludeClassCode: isEditing ? editingClassCode : '',
+    });
+  }, [form.date, form.subjectId, isEditing, editingClassCode]);
 
   const studentsByEmail = useMemo(() => {
     return students.reduce((accumulator, student) => {
@@ -187,6 +138,47 @@ const AdminClassesPage = () => {
     () => subjects.find((subject) => subject.subjectId === form.subjectId),
     [subjects, form.subjectId]
   );
+
+  const generatedClassCode = useMemo(
+    () => generateClassCode(form.subjectId, form.date, form.order),
+    [form.subjectId, form.date, form.order]
+  );
+
+  const calculateOrderByDateAndSubject = async ({
+    date,
+    subjectId,
+    excludeClassCode = '',
+  }) => {
+    if (!date || !subjectId) {
+      setForm((prev) => ({ ...prev, order: '01' }));
+      return;
+    }
+
+    try {
+      const classesForSlot = await loadClasses({ date, subjectId });
+      const filtered = (classesForSlot || []).filter(
+        (cls) => cls.classCode !== excludeClassCode
+      );
+
+      const usedOrders = new Set(
+        filtered
+          .map((cls) => Number.parseInt(getOrderFromClassCode(cls.classCode), 10))
+          .filter((value) => Number.isInteger(value) && value > 0)
+      );
+
+      let nextOrder = 1;
+      while (usedOrders.has(nextOrder) && nextOrder < 100) {
+        nextOrder += 1;
+      }
+
+      setForm((prev) => ({
+        ...prev,
+        order: padOrder(nextOrder),
+      }));
+    } catch (_requestError) {
+      setForm((prev) => ({ ...prev, order: '01' }));
+    }
+  };
 
   const handleInputChange = (event) => {
     const { name, value, type, checked } = event.target;
@@ -313,9 +305,7 @@ const AdminClassesPage = () => {
 
     const payload = new FormData();
     const classStudentsEntries = buildClassStudentsEntries();
-    if (!isEditing) {
-      payload.append('classCode', generateClassCode(form.subjectId, form.date, form.order));
-    }
+    payload.append('classCode', generatedClassCode);
     payload.append('title', form.title.trim());
     payload.append('description', form.description.trim());
     payload.append('date', form.date);
@@ -336,19 +326,17 @@ const AdminClassesPage = () => {
 
     setSaving(true);
     setUploadProgress(0);
-    const estimatedUploadMs = estimateUploadDurationMs(form.recordingFile);
-    const uploadStartedAt = Date.now();
 
     const requestConfig = {
       headers: { 'Content-Type': 'multipart/form-data' },
       onUploadProgress: (progressEvent) => {
         if (progressEvent.total) {
-          const next = Math.min(99, Math.round((progressEvent.loaded * 99) / progressEvent.total));
+          const next = Math.min(95, Math.round((progressEvent.loaded * 95) / progressEvent.total));
           setUploadProgress((prev) => Math.max(prev, next));
           return;
         }
 
-        setUploadProgress((prev) => Math.min(prev + 2, 95));
+        setUploadProgress((prev) => Math.min(prev + 4, 95));
       },
     };
 
@@ -361,10 +349,6 @@ const AdminClassesPage = () => {
         setSuccess('Clase publicada correctamente.');
       }
 
-      const elapsedUploadMs = Date.now() - uploadStartedAt;
-      const remainingProgressMs = Math.max(0, estimatedUploadMs - elapsedUploadMs);
-      await animateProgressTo(100, Math.min(remainingProgressMs, MAX_FINAL_PROGRESS_MS));
-
       const nextClasses = await loadClasses();
       setClasses(nextClasses);
       setIsEditing(false);
@@ -372,16 +356,17 @@ const AdminClassesPage = () => {
       resetForm(true);
 
       if (form.date) {
-        const classesForDate = await loadClasses({ date: form.date });
-        setForm((prev) => ({ ...prev, order: padOrder(classesForDate.length + 1) }));
+        await calculateOrderByDateAndSubject({
+          date: form.date,
+          subjectId: form.subjectId,
+        });
       }
     } catch (requestError) {
       setError(requestError.response?.data?.message || 'No se pudo guardar la clase.');
       setUploadProgress(0);
     } finally {
       setSaving(false);
-      clearProgressInterval();
-      setTimeout(() => setUploadProgress(0), 1200);
+      setUploadProgress(0);
     }
   };
 
@@ -475,9 +460,7 @@ const AdminClassesPage = () => {
         <section className="lg:col-span-7">
           <div className="bg-white rounded-[2.5rem] p-8 sm:p-10 shadow-sm border border-gray-100">
             <div className="flex items-center gap-4 mb-8">
-              <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center">
-                {isEditing ? <Edit3 size={24} /> : <Plus size={24} />}
-              </div>
+             
               <div>
                 <h2 className="text-2xl font-extrabold text-gray-900">
                   {isEditing ? 'Editar clase' : 'Publicar clase'}
@@ -497,7 +480,10 @@ const AdminClassesPage = () => {
               </div>
             )}
 
-            <form onSubmit={handleSubmit} className="space-y-6">
+            <form
+              onSubmit={handleSubmit}
+              className="space-y-6 [&_input]:min-w-0 [&_input]:max-w-full [&_select]:min-w-0 [&_select]:max-w-full [&_textarea]:min-w-0 [&_textarea]:max-w-full"
+            >
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <div className="space-y-2">
                   <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">
@@ -561,9 +547,9 @@ const AdminClassesPage = () => {
                   <label className="text-xs font-black text-blue-600 uppercase tracking-widest ml-1">
                     Video de clase
                   </label>
-                  <label className="w-full bg-white border-2 border-blue-100 hover:border-blue-300 text-blue-700 rounded-2xl px-4 py-3.5 font-bold transition-all flex items-center gap-2 cursor-pointer">
+                  <label className="w-full min-w-0 overflow-hidden bg-white border-2 border-blue-100 hover:border-blue-300 text-blue-700 rounded-2xl px-4 py-3.5 font-bold transition-all flex items-center gap-2 cursor-pointer">
                     <Video size={18} />
-                    <span className="truncate">
+                    <span className="flex-1 min-w-0 truncate">
                       {form.recordingFile?.name || 'Selecciona video'}
                     </span>
                     <input
@@ -710,9 +696,7 @@ const AdminClassesPage = () => {
                     Codigo generado
                   </p>
                   <p className="text-xl font-black tracking-widest text-emerald-400 mt-1">
-                    {isEditing
-                      ? editingClassCode
-                      : generateClassCode(form.subjectId, form.date, form.order)}
+                    {generatedClassCode}
                   </p>
                 </div>
 
@@ -809,7 +793,6 @@ const AdminClassesPage = () => {
                   </div>
 
                   <div className="mt-3 text-xs font-semibold text-gray-500 flex flex-wrap gap-x-4 gap-y-1">
-                    <span>{new Date(cls.date).toLocaleDateString('es-CR')}</span>
                     <span>{cls.subject?.name || 'Sin materia'}</span>
                     <span>Monto: {cls.price}</span>
                     <span>

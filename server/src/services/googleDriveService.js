@@ -121,6 +121,7 @@ const removeTempFile = async (filePath) => {
 
 module.exports = {
   isDriveConfigured,
+  getDriveClient,
   uploadFileToGoogleDrive,
   deleteFileFromGoogleDrive,
   removeTempFile,

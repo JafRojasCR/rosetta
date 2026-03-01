@@ -1,10 +1,12 @@
 const Class = require('../models/Class');
 const Payment = require('../models/Payment');
 const jwt = require('jsonwebtoken');
+const path = require('path');
 const { success, error } = require('../utils/apiResponse');
 const Joi = require('joi');
-const { googleDriveClassesVideosFolderId, jwtSecret } = require('../config/env');
+const { googleDriveClassesVideosFolderId, jwtSecret, uploadDir } = require('../config/env');
 const {
+  getDriveClient,
   uploadFileToGoogleDrive,
   deleteFileFromGoogleDrive,
   removeTempFile,
@@ -33,61 +35,232 @@ const isClassUnlockedForUser = (cls, userEmail) => {
   );
 };
 
-const getPlayableVideoUrl = (recordingUrl = '', req) => {
-  if (!recordingUrl) return '';
-
-  if (/^https?:\/\//i.test(recordingUrl)) {
-    const driveFileId = extractGoogleDriveFileId(recordingUrl);
-    if (driveFileId) {
-      return `https://drive.google.com/uc?export=download&id=${driveFileId}`;
-    }
-    return recordingUrl;
-  }
-
-  if (recordingUrl.startsWith('/')) {
-    return `${req.protocol}://${req.get('host')}${recordingUrl}`;
-  }
-
-  return recordingUrl;
-};
-
-const buildSecurePlayerHtml = (videoUrl) => `<!doctype html>
+const buildSecurePlayerHtml = (streamUrl) => `<!doctype html>
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Reproductor</title>
     <style>
-      html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #0f172a; overflow: hidden; }
-      .wrap { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+      html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #f3f4f6; overflow: hidden; font-family: Poppins, system-ui, sans-serif; }
+      .player-shell { width: 100%; height: 100%; position: relative; background: #111827; }
+      .video-wrap { position: relative; width: 100%; height: 100%; background: #0f172a; }
       video { width: 100%; height: 100%; object-fit: contain; background: #0f172a; }
+      .controls {
+        position: absolute;
+        left: 12px;
+        right: 12px;
+        bottom: 12px;
+        z-index: 30;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 12px;
+        border-radius: 14px;
+        background: linear-gradient(
+          135deg,
+          rgba(15, 23, 42, 0.58),
+          rgba(30, 41, 59, 0.52)
+        );
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        backdrop-filter: blur(14px) saturate(130%);
+        -webkit-backdrop-filter: blur(14px) saturate(130%);
+        opacity: 1;
+        visibility: visible;
+        transform: translateY(0);
+        transition: opacity .35s ease, transform .35s ease, visibility .35s ease;
+      }
+      .controls::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: 14px;
+        pointer-events: none;
+        background: rgba(255, 255, 255, 0.04);
+      }
+      .controls--hidden {
+        opacity: 0;
+        visibility: hidden;
+        transform: translateY(10px);
+        pointer-events: none;
+      }
+      .btn { border: 0; outline: none; border-radius: 12px; cursor: pointer; background: #2563eb; color: #fff; font-weight: 700; font-size: 12px; width: 42px; height: 42px; display: inline-flex; align-items: center; justify-content: center; transition: transform .2s ease, opacity .2s ease; }
+      .btn:hover { transform: translateY(-1px); }
+      .btn:active { transform: scale(.98); }
+      .timeline { flex: 1; min-width: 0; appearance: none; height: 6px; border-radius: 999px; background: #374151; outline: none; }
+      .timeline::-webkit-slider-thumb { appearance: none; width: 14px; height: 14px; border-radius: 999px; background: #3b82f6; cursor: pointer; }
+      .time { color: #d1d5db; font-size: 12px; font-weight: 700; min-width: 90px; text-align: center; }
+      .volume-wrap { display: flex; align-items: center; gap: 6px; }
+      .vol-icon { color: #cbd5e1; font-size: 13px; font-weight: 700; line-height: 1; }
+      .volume { flex: 0 0 66px; width: 66px; }
+      .hint { color: #94a3b8; font-size: 11px; font-weight: 700; }
     </style>
   </head>
   <body>
-    <div class="wrap">
+    <div class="player-shell">
+      <div class="video-wrap">
       <video
         id="class-video"
-        controls
         controlsList="nodownload noplaybackrate noremoteplayback nofullscreen"
         disablePictureInPicture
         playsinline
-      >
-        <source src="${videoUrl}" />
-      </video>
+        webkit-playsinline
+        x-webkit-airplay="deny"
+        preload="metadata"
+      ></video>
+      </div>
+
+      <div class="controls">
+        <button id="toggle-play" class="btn" type="button">▶</button>
+        <input id="timeline" class="timeline" type="range" min="0" max="100" step="0.1" value="0" />
+        <span id="time" class="time">00:00 / 00:00</span>
+        <div class="volume-wrap">
+          <span class="vol-icon">🔊</span>
+          <input id="volume" class="timeline volume" type="range" min="0" max="1" step="0.01" value="1" />
+        </div>
+        <button id="toggle-full" class="btn" type="button">⛶</button>
+      </div>
     </div>
+
     <script>
+      const video = document.getElementById('class-video');
+      const playBtn = document.getElementById('toggle-play');
+      const fullBtn = document.getElementById('toggle-full');
+      const timeline = document.getElementById('timeline');
+      const time = document.getElementById('time');
+      const volume = document.getElementById('volume');
+      const controls = document.querySelector('.controls');
+      const videoWrap = document.querySelector('.video-wrap');
+      let controlsHideTimer = null;
+
+      video.src = ${JSON.stringify(streamUrl)};
+      video.volume = 1;
+
+      const toTime = (seconds) => {
+        if (!Number.isFinite(seconds)) return '00:00';
+        const value = Math.max(0, Math.floor(seconds));
+        const m = String(Math.floor(value / 60)).padStart(2, '0');
+        const s = String(value % 60).padStart(2, '0');
+        return m + ':' + s;
+      };
+
+      const updateTimeUI = () => {
+        const current = video.currentTime || 0;
+        const total = video.duration || 0;
+        const ratio = total > 0 ? (current / total) * 100 : 0;
+        timeline.value = String(ratio);
+        time.textContent = toTime(current) + ' / ' + toTime(total);
+      };
+
+      const clearControlsHideTimer = () => {
+        if (controlsHideTimer) {
+          clearTimeout(controlsHideTimer);
+          controlsHideTimer = null;
+        }
+      };
+
+      const showControls = () => {
+        controls.classList.remove('controls--hidden');
+      };
+
+      const scheduleControlsHide = () => {
+        clearControlsHideTimer();
+        controlsHideTimer = setTimeout(() => {
+          controls.classList.add('controls--hidden');
+        }, 3000);
+      };
+
+      const wakeControls = () => {
+        showControls();
+        scheduleControlsHide();
+      };
+
+      playBtn.addEventListener('click', () => {
+        if (video.paused) {
+          video.play();
+        } else {
+          video.pause();
+        }
+        wakeControls();
+      });
+
+      video.addEventListener('play', () => {
+        playBtn.textContent = '❚❚';
+      });
+
+      video.addEventListener('pause', () => {
+        playBtn.textContent = '▶';
+      });
+
+      video.addEventListener('loadedmetadata', updateTimeUI);
+      video.addEventListener('timeupdate', updateTimeUI);
+      video.addEventListener('play', scheduleControlsHide);
+      video.addEventListener('pause', wakeControls);
+      video.addEventListener('seeking', wakeControls);
+
+      timeline.addEventListener('input', () => {
+        const total = video.duration || 0;
+        if (total <= 0) return;
+        video.currentTime = (Number(timeline.value) / 100) * total;
+        wakeControls();
+      });
+
+      volume.addEventListener('input', () => {
+        video.volume = Number(volume.value);
+        wakeControls();
+      });
+
+      fullBtn.addEventListener('click', () => {
+        if (!document.fullscreenElement) {
+          document.documentElement.requestFullscreen?.();
+        } else {
+          document.exitFullscreen?.();
+        }
+        wakeControls();
+      });
+
+      document.addEventListener('mousemove', wakeControls);
+      videoWrap.addEventListener('mousemove', wakeControls);
+      controls.addEventListener('mousemove', wakeControls);
+      document.addEventListener('touchstart', wakeControls, { passive: true });
+      document.addEventListener('fullscreenchange', wakeControls);
+
       document.addEventListener('contextmenu', function (event) { event.preventDefault(); });
       document.addEventListener('keydown', function (event) {
         const key = (event.key || '').toLowerCase();
         const blocked =
           key === 'f12' ||
           (event.ctrlKey && event.shiftKey && (key === 'i' || key === 'j' || key === 'c')) ||
-          (event.ctrlKey && (key === 's' || key === 'u'));
+          (event.ctrlKey && (key === 's' || key === 'u')) ||
+          key === 'f';
         if (blocked) event.preventDefault();
       });
+
+      video.addEventListener('webkitbeginfullscreen', function (event) { event.preventDefault?.(); });
+      video.addEventListener('enterpictureinpicture', () => {
+        document.exitPictureInPicture?.();
+      });
+
+      wakeControls();
     </script>
   </body>
 </html>`;
+
+const resolveEmbedContext = async (token) => {
+  const decoded = jwt.verify(token, jwtSecret);
+  if (decoded?.type !== 'class_embed' || !decoded?.classCode) {
+    return { denied: true, code: 403, message: 'Acceso no permitido.' };
+  }
+
+  const cls = await Class.findOne({ classCode: decoded.classCode });
+  if (!cls) return { denied: true, code: 404, message: 'Clase no encontrada.' };
+
+  const isAdmin = decoded.role === 'admin';
+  const canAccess = isAdmin || isClassUnlockedForUser(cls, decoded.email);
+  if (!canAccess) return { denied: true, code: 403, message: 'Clase bloqueada.' };
+
+  return { denied: false, decoded, cls };
+};
 
 const safeJsonParse = (value, fallback) => {
   if (typeof value !== 'string') return value;
@@ -282,6 +455,7 @@ const createClass = async (req, res) => {
 // PUT /api/classes/:classCode (admin)
 const updateClass = async (req, res) => {
   const schema = Joi.object({
+    classCode: Joi.string().optional(),
     title: Joi.string().optional(),
     description: Joi.string().allow('').optional(),
     date: Joi.date().optional(),
@@ -322,6 +496,20 @@ const updateClass = async (req, res) => {
     if (!existingClass) return error(res, 'Clase no encontrada.', 404);
 
     const updateData = { ...value };
+    const nextClassCode = String(updateData.classCode || '').trim();
+    const willChangeClassCode =
+      Boolean(nextClassCode) && nextClassCode !== existingClass.classCode;
+
+    if (willChangeClassCode) {
+      const duplicated = await Class.findOne({ classCode: nextClassCode });
+      if (duplicated) {
+        return error(res, 'Ya existe una clase con ese código.', 409);
+      }
+
+      updateData.classCode = nextClassCode;
+    } else {
+      delete updateData.classCode;
+    }
 
     const recordingFile = req.files?.recordingFile?.[0];
     const canvaFile = req.files?.canvaFile?.[0];
@@ -371,6 +559,14 @@ const updateClass = async (req, res) => {
       new: true,
       runValidators: true,
     });
+
+    if (willChangeClassCode) {
+      await Payment.updateMany(
+        { classCode: existingClass.classCode },
+        { $set: { classCode: nextClassCode } }
+      );
+    }
+
     return success(res, cls, 'Clase actualizada exitosamente');
   } catch (err) {
     await removeTempFile(req.files?.recordingFile?.[0]?.path);
@@ -428,7 +624,7 @@ const getClassEmbedToken = async (req, res) => {
         role: req.user?.role || 'student',
       },
       jwtSecret,
-      { expiresIn: '2h' }
+      { expiresIn: '3h' }
     );
 
     return success(res, { token, iframeUrl: `/api/classes/embed/${token}` });
@@ -440,25 +636,79 @@ const getClassEmbedToken = async (req, res) => {
 // GET /api/classes/embed/:token
 const getClassEmbedByToken = async (req, res) => {
   try {
-    const decoded = jwt.verify(req.params.token, jwtSecret);
-    if (decoded?.type !== 'class_embed' || !decoded?.classCode) {
-      return res.status(403).send('Acceso no permitido.');
+    const context = await resolveEmbedContext(req.params.token);
+    if (context.denied) {
+      return res.status(context.code).send(context.message);
     }
 
-    const cls = await Class.findOne({ classCode: decoded.classCode });
-    if (!cls) return res.status(404).send('Clase no encontrada.');
+    if (!context.cls.recordingUrl) return res.status(404).send('Video no disponible.');
 
-    const isAdmin = decoded.role === 'admin';
-    const canAccess = isAdmin || isClassUnlockedForUser(cls, decoded.email);
-    if (!canAccess) return res.status(403).send('Clase bloqueada.');
-
-    const playableUrl = getPlayableVideoUrl(cls.recordingUrl || '', req);
-    if (!playableUrl) return res.status(404).send('Video no disponible.');
+    const streamUrl = `/api/classes/embed/${req.params.token}/stream`;
 
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    return res.status(200).send(buildSecurePlayerHtml(playableUrl));
+    return res.status(200).send(buildSecurePlayerHtml(streamUrl));
   } catch (_err) {
     return res.status(403).send('Token de reproducción inválido o expirado.');
+  }
+};
+
+// GET /api/classes/embed/:token/stream
+const getClassEmbedStreamByToken = async (req, res) => {
+  try {
+    const context = await resolveEmbedContext(req.params.token);
+    if (context.denied) {
+      return res.status(context.code).send(context.message);
+    }
+
+    const recordingUrl = context.cls.recordingUrl || '';
+    if (!recordingUrl) return res.status(404).send('Video no disponible.');
+
+    const driveFileId = extractGoogleDriveFileId(recordingUrl);
+    if (driveFileId) {
+      const drive = getDriveClient();
+      if (!drive) return res.status(503).send('Google Drive deshabilitado.');
+
+      const rangeHeader = req.headers.range;
+      const driveResponse = await drive.files.get(
+        {
+          fileId: driveFileId,
+          alt: 'media',
+          supportsAllDrives: true,
+        },
+        {
+          responseType: 'stream',
+          headers: rangeHeader ? { Range: rangeHeader } : undefined,
+        }
+      );
+
+      const passthroughHeaders = [
+        'content-type',
+        'content-length',
+        'content-range',
+        'accept-ranges',
+        'cache-control',
+      ];
+
+      res.status(driveResponse.status || (rangeHeader ? 206 : 200));
+      passthroughHeaders.forEach((headerName) => {
+        const headerValue = driveResponse.headers?.[headerName];
+        if (headerValue) {
+          res.setHeader(headerName, headerValue);
+        }
+      });
+
+      return driveResponse.data.pipe(res);
+    }
+
+    if (recordingUrl.startsWith('/uploads/')) {
+      const fileName = recordingUrl.replace(/^\/uploads\//, '');
+      const localPath = path.resolve(__dirname, '..', uploadDir, fileName);
+      return res.sendFile(localPath);
+    }
+
+    return res.status(404).send('Formato de video no compatible para reproducción segura.');
+  } catch (err) {
+    return res.status(403).send(err.message || 'No se pudo reproducir el video.');
   }
 };
 
@@ -470,4 +720,5 @@ module.exports = {
   deleteClass,
   getClassEmbedToken,
   getClassEmbedByToken,
+  getClassEmbedStreamByToken,
 };
