@@ -50,4 +50,6 @@ module.exports = {
   googleDriveFolderId: process.env.GOOGLE_DRIVE_FOLDER_ID || '',
   googleDriveClassesVideosFolderId:
     process.env.GOOGLE_DRIVE_CLASSES_VIDEOS_FOLDER_ID || '',
+  googleDrivePaymentsFolderId:
+    process.env.GOOGLE_DRIVE_PAYMENTS_FOLDER_ID || '',
 };

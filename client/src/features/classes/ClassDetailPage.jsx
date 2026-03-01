@@ -97,7 +97,7 @@ const ClassDetailPage = () => {
               Debes realizar el pago para acceder al contenido
             </p>
             <Link
-              to="/pagos/nuevo"
+              to={`/pagos?classCode=${encodeURIComponent(cls.classCode || '')}`}
               className="inline-block bg-primary-600 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-primary-700 transition-colors"
             >
               Ir a Pagos

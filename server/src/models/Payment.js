@@ -34,6 +34,31 @@ const paymentSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    amount: {
+      type: Number,
+      default: null,
+    },
+    recipient: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    detail: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    validationChecks: {
+      hasBillNumber: { type: Boolean, default: false },
+      hasDate: { type: Boolean, default: false },
+      amountMatches: { type: Boolean, default: false },
+      detailMatches: { type: Boolean, default: false },
+      recipientMatches: { type: Boolean, default: false },
+    },
+    validationErrors: {
+      type: [String],
+      default: [],
+    },
     status: {
       type: String,
       enum: ['pendiente', 'aprobado', 'rechazado'],

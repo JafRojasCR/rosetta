@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, UploadCloud, FileText, Trash2 } from 'lucide-react';
 import api from '../../services/api';
+import CustomSelectMenu from '../../components/CustomSelectMenu';
 
 const AdminDocumentsPage = () => {
   const navigate = useNavigate();
@@ -187,31 +188,27 @@ const AdminDocumentsPage = () => {
                 <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">
                   Materia
                 </label>
-                <select
-                  name="subjectId"
+                <CustomSelectMenu
                   value={form.subjectId}
-                  onChange={(event) =>
+                  onChange={(nextValue) =>
                     setForm((prev) => ({
                       ...prev,
-                      subjectId: event.target.value,
+                      subjectId: nextValue,
                     }))
                   }
-                  className="w-full bg-gray-50 border-transparent border-2 focus:border-blue-500 focus:bg-white rounded-2xl px-5 py-3.5 font-semibold transition-all outline-none"
-                  disabled={loadingSubjects || subjects.length === 0}
-                >
-                  <option value="">
-                    {loadingSubjects
+                  options={subjects.map((subject) => ({
+                    value: subject.subjectId,
+                    label: `${subject.name} (${subject.subjectId})`,
+                  }))}
+                  placeholder={
+                    loadingSubjects
                       ? 'Cargando materias...'
                       : subjects.length === 0
                         ? 'No hay materias disponibles'
-                        : 'Selecciona una materia'}
-                  </option>
-                  {subjects.map((subject) => (
-                    <option key={subject.subjectId} value={subject.subjectId}>
-                      {subject.name} ({subject.subjectId})
-                    </option>
-                  ))}
-                </select>
+                        : 'Selecciona una materia'
+                  }
+                  disabled={loadingSubjects || subjects.length === 0}
+                />
               </div>
 
               <div className="space-y-2">

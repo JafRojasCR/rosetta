@@ -17,6 +17,7 @@ import {
   Video,
 } from 'lucide-react';
 import api from '../../services/api';
+import CustomSelectMenu from '../../components/CustomSelectMenu';
 
 const toDateInputValue = (value) => {
   if (!value) return '';
@@ -154,6 +155,24 @@ const AdminClassesPage = () => {
   const selectedSubject = useMemo(
     () => subjects.find((subject) => subject.subjectId === form.subjectId),
     [subjects, form.subjectId]
+  );
+
+  const subjectOptions = useMemo(
+    () =>
+      (subjects || []).map((subject) => ({
+        value: subject.subjectId,
+        label: `${subject.name} (${subject.subjectId})`,
+      })),
+    [subjects]
+  );
+
+  const studentOptions = useMemo(
+    () =>
+      (students || []).map((student) => ({
+        value: student.email,
+        label: `${student.name} ${student.lastName}`,
+      })),
+    [students]
   );
 
   const generatedClassCode = useMemo(
@@ -522,23 +541,15 @@ const AdminClassesPage = () => {
                   <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">
                     Materia
                   </label>
-                  <select
-                    name="subjectId"
+                  <CustomSelectMenu
                     value={form.subjectId}
-                    onChange={handleInputChange}
-                    className="w-full bg-gray-50 border-2 border-transparent focus:border-blue-500 rounded-2xl px-5 py-3.5 font-semibold text-gray-700 outline-none"
+                    onChange={(nextValue) => {
+                      setForm((prev) => ({ ...prev, subjectId: nextValue }));
+                    }}
+                    options={subjectOptions}
+                    placeholder={subjects.length === 0 ? 'No hay materias' : 'Selecciona una materia'}
                     disabled={subjects.length === 0}
-                  >
-                    {subjects.length === 0 ? (
-                      <option value="">No hay materias</option>
-                    ) : (
-                      subjects.map((subject) => (
-                        <option key={subject.subjectId} value={subject.subjectId}>
-                          {subject.name} ({subject.subjectId})
-                        </option>
-                      ))
-                    )}
-                  </select>
+                  />
                 </div>
 
                 <div className="md:col-span-2 space-y-2">
@@ -658,24 +669,20 @@ const AdminClassesPage = () => {
 
                 {form.isTutoring && (
                   <div className="space-y-2">
-                    <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">
+                    <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1 flex items-center gap-2">
+                      <User size={12} />
                       Estudiante
                     </label>
-                    <div className="relative">
-                      <User className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
-                      <select
-                        value={form.tutorStudentEmail}
-                        onChange={handleTutorSelect}
-                        className="w-full bg-white border-2 border-transparent focus:border-blue-500 rounded-2xl pl-12 pr-5 py-3.5 font-semibold text-gray-700 outline-none"
-                      >
-                        <option value="">Selecciona un estudiante</option>
-                        {students.map((student) => (
-                          <option key={student.email} value={student.email}>
-                            {student.name} {student.lastName} ({student.email})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                    <CustomSelectMenu
+                      value={form.tutorStudentEmail}
+                      onChange={(nextValue) => {
+                        handleTutorSelect({ target: { value: nextValue } });
+                      }}
+                      options={studentOptions}
+                      placeholder="Selecciona un estudiante"
+                      disabled={students.length === 0}
+                      buttonClassName="bg-white py-2.5 rounded-xl"
+                    />
                   </div>
                 )}
 
