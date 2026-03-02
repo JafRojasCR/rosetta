@@ -57,6 +57,35 @@ const cleanupSpaces = (value = '') =>
     .replace(/[ ]{2,}/g, ' ')
     .trim();
 
+const isVercelRuntime = Boolean(process.env.VERCEL);
+const defaultTesseractCorePath =
+  process.env.TESSERACT_CORE_PATH ||
+  (isVercelRuntime
+    ? 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.1/tesseract-core.wasm.js'
+    : '');
+
+const getTesseractRecognizeOptions = () => {
+  const options = {};
+  if (defaultTesseractCorePath) {
+    options.corePath = defaultTesseractCorePath;
+  }
+
+  if (debugOcrEnabled) {
+    options.logger = (message) => {
+      if (message?.status) {
+        logOcr('TESSERACT_PROGRESS', {
+          status: message.status,
+          progress: Number.isFinite(message.progress)
+            ? Number((message.progress * 100).toFixed(2))
+            : null,
+        });
+      }
+    };
+  }
+
+  return options;
+};
+
 const parseDateFromText = (text = '') => {
   const source = normalizeText(text);
 
@@ -467,13 +496,15 @@ const extractTextFromPdfBuffer = async (buffer) => {
 
 const extractTextFromImage = async (filePath) => {
   const Tesseract = require('tesseract.js');
-  const { data } = await Tesseract.recognize(filePath, 'spa+eng');
+  const options = getTesseractRecognizeOptions();
+  const { data } = await Tesseract.recognize(filePath, 'spa+eng', options);
   return cleanupSpaces(data?.text || '');
 };
 
 const extractTextFromImageBuffer = async (buffer) => {
   const Tesseract = require('tesseract.js');
-  const { data } = await Tesseract.recognize(buffer, 'spa+eng');
+  const options = getTesseractRecognizeOptions();
+  const { data } = await Tesseract.recognize(buffer, 'spa+eng', options);
   return cleanupSpaces(data?.text || '');
 };
 

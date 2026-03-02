@@ -3,6 +3,11 @@
   "devCommand": "npm run dev",
   "outputDirectory": "client/dist",
   "framework": "vite",
+  "functions": {
+    "api/index.js": {
+      "includeFiles": "node_modules/tesseract.js-core/**/*"
+    }
+  },
   "rewrites": [
     {
       "source": "/api/(.*)",
