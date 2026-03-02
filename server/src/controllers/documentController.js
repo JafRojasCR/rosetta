@@ -49,6 +49,10 @@ const buildSecureVideoPlayerHtml = (streamUrl) => `<!doctype html>
         .controls { gap: 8px; padding: 8px 10px; }
         .time, .volume-wrap { display: none; }
       }
+      @media (max-width: 768px) and (orientation: landscape) {
+        .time { display: block; }
+        .volume-wrap { display: flex; }
+      }
     </style>
   </head>
   <body>

@@ -138,6 +138,18 @@ const DashboardPage = () => {
         </h1>
 
         <div className="flex items-center justify-end gap-2 sm:gap-3 ml-auto">
+          {!isAdmin ? (
+            <button
+              className="bg-blue-50 text-blue-600 hover:bg-blue-100 w-11 h-11 sm:w-auto sm:h-auto sm:px-5 py-0 sm:py-2.5 rounded-full sm:rounded-xl font-semibold transition-colors duration-200 flex items-center justify-center gap-2 text-sm sm:text-base"
+              onClick={() => navigate('/perfil')}
+              type="button"
+              aria-label="Perfil"
+            >
+              <User size={18} />
+              <span className="hidden sm:inline">Perfil</span>
+            </button>
+          ) : null}
+
           <button
             className="bg-red-50 text-red-500 hover:bg-red-100 w-11 h-11 sm:w-auto sm:h-auto sm:px-5 py-0 sm:py-2.5 rounded-full sm:rounded-xl font-semibold transition-colors duration-200 flex items-center justify-center gap-2 text-sm sm:text-base"
             onClick={handleLogout}

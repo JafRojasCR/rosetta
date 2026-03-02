@@ -223,8 +223,8 @@ const DocumentsPage = () => {
 
   return (
     <div
-      className={`min-h-screen bg-gray-100 font-['Poppins'] flex flex-col overflow-x-hidden transform transition-all duration-700 ease-out ${
-        isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
+      className={`min-h-screen bg-gray-100 font-['Poppins'] flex flex-col overflow-x-hidden transition-all duration-700 ease-out ${
+        isVisible ? 'opacity-100' : 'opacity-0'
       }`}
     >
       <style>
