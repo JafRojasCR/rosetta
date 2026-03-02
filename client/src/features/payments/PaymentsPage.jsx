@@ -33,6 +33,14 @@ const statusLabels = {
   rechazado: 'Rechazada automáticamente',
 };
 
+const getStatusLabel = (payment) => {
+  if (payment?.status === 'aprobado' && payment?.approvedManually) {
+    return 'Aprobado manualmente';
+  }
+
+  return statusLabels[payment?.status] || payment?.status;
+};
+
 const CHECK_LABELS = {
   hasBillNumber: 'Comprobante/documento detectado',
   hasDate: 'Fecha detectada',
@@ -646,7 +654,7 @@ const PaymentsPage = () => {
                             }`}
                           >
                             {item.status === 'pendiente' ? <AlertTriangle size={14} /> : <CheckCircle2 size={14} />}
-                            {statusLabels[item.status] || item.status} • {formatDate(statusTimestamp)} {formatTime(statusTimestamp)}
+                            {getStatusLabel(item)} • {formatDate(statusTimestamp)} {formatTime(statusTimestamp)}
                           </div>
 
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[11px] font-bold">
@@ -772,7 +780,7 @@ const PaymentsPage = () => {
 
               <h3 className="text-3xl font-black text-gray-900 mb-6 tracking-tight">Guía de comprobantes</h3>
               <p className="text-gray-500 font-medium mb-8 leading-relaxed">
-                Para validar tu pago automáticamente, el comprobante debe mostrar esta información de forma clara:
+                Para validar tu pago automáticamente, el comprobante debe mostrar esta información claramente:
               </p>
 
               <div className="space-y-5 mb-10">

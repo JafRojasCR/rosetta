@@ -262,6 +262,7 @@ const createPayment = async (req, res) => {
       validationChecks: validation.checks,
       validationErrors: validation.errors,
       status: paymentStatus,
+      approvedManually: false,
     });
     uploadedDriveFileId = '';
 
@@ -345,7 +346,20 @@ const updatePaymentStatus = async (req, res) => {
     const payment = await Payment.findOne({ paymentId: req.params.paymentId });
     if (!payment) return error(res, 'Pago no encontrado.', 404);
 
+    if (status === 'rechazado') {
+      const driveFileId = extractGoogleDriveFileId(payment.billUrl || '');
+      if (driveFileId) {
+        try {
+          await deleteFileFromGoogleDrive(driveFileId);
+          payment.billUrl = '';
+        } catch (_) {
+          // no-op: keep rejection flow even if cleanup fails
+        }
+      }
+    }
+
     payment.status = status;
+    payment.approvedManually = status === 'aprobado';
     await payment.save();
 
     if (status === 'aprobado') {

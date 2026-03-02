@@ -64,6 +64,10 @@ const paymentSchema = new mongoose.Schema(
       enum: ['pendiente', 'aprobado', 'rechazado'],
       default: 'pendiente',
     },
+    approvedManually: {
+      type: Boolean,
+      default: false,
+    },
   },
   { timestamps: true }
 );
