@@ -481,6 +481,7 @@ const ClassesPage = () => {
                             type="button"
                             onClick={() => handleVote(cls, '1')}
                             disabled={Boolean(votingByClass[cls.classCode])}
+                            aria-label="Me gustó"
                             className={`w-full py-3 rounded-2xl font-black transition-all flex items-center justify-center gap-2 disabled:opacity-60 ${
                               cls.currentVote === '1'
                                 ? 'bg-blue-600 text-white'
@@ -488,13 +489,14 @@ const ClassesPage = () => {
                             }`}
                           >
                             <ThumbsUp size={16} />
-                            Me gustó
+                            <span className="hidden sm:inline">Me gustó</span>
                           </button>
 
                           <button
                             type="button"
                             onClick={() => handleVote(cls, '-1')}
                             disabled={Boolean(votingByClass[cls.classCode])}
+                            aria-label="No me gustó"
                             className={`w-full py-3 rounded-2xl font-black transition-all flex items-center justify-center gap-2 disabled:opacity-60 ${
                               cls.currentVote === '-1'
                                 ? 'bg-red-600 text-white'
@@ -502,7 +504,7 @@ const ClassesPage = () => {
                             }`}
                           >
                             <ThumbsDown size={16} />
-                            No me gustó
+                            <span className="hidden sm:inline">No me gustó</span>
                           </button>
                         </div>
                       </div>

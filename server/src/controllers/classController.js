@@ -839,6 +839,8 @@ const deleteClass = async (req, res) => {
       await deleteFileFromGoogleDrive(canvaFileId);
     }
 
+    await Payment.deleteMany({ classCode: cls.classCode });
+
     await Class.deleteOne({ _id: cls._id });
     return success(res, null, 'Clase eliminada exitosamente');
   } catch (err) {

@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
   BookOpen,
+  X,
   Clock,
   Download,
+  ExternalLink,
   PlayCircle,
   Search,
 } from 'lucide-react';
@@ -15,6 +17,7 @@ const DOCUMENT_THUMB =
   'https://images.unsplash.com/photo-1544640808-32ca72ac7f37?q=80&w=600&auto=format&fit=crop';
 const VIDEO_THUMB =
   'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=600&auto=format&fit=crop';
+const MODAL_EXIT_ANIMATION_MS = 220;
 
 const normalizeType = (resource) => {
   const explicitType = resource?.type?.toLowerCase();
@@ -44,6 +47,12 @@ const getDownloadUrl = (url) => {
   return `https://drive.google.com/uc?export=download&id=${fileId}`;
 };
 
+const getPdfPreviewUrl = (url) => {
+  const fileId = getGoogleDriveFileId(url);
+  if (fileId) return `https://drive.google.com/file/d/${fileId}/preview`;
+  return url;
+};
+
 const buildResource = (doc) => {
   const type = normalizeType(doc);
   const dateValue = doc?.date || doc?.createdAt || doc?.updatedAt;
@@ -58,6 +67,7 @@ const buildResource = (doc) => {
   return {
     id: doc?.docId || doc?.id,
     title: doc?.title || 'Recurso sin titulo',
+    description: String(doc?.description || '').trim(),
     type,
     category: doc?.subject?.name || 'General',
     author: doc?.author || doc?.teacher || doc?.createdBy || 'Equipo Rosetta',
@@ -76,6 +86,19 @@ const DocumentsPage = () => {
   const [error, setError] = useState('');
   const [filter, setFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [viewerLoading, setViewerLoading] = useState(false);
+  const [viewerError, setViewerError] = useState('');
+  const [viewerTitle, setViewerTitle] = useState('');
+  const [viewerType, setViewerType] = useState('');
+  const [viewerUrl, setViewerUrl] = useState('');
+  const [descriptionDialogOpen, setDescriptionDialogOpen] = useState(false);
+  const [descriptionDialogTitle, setDescriptionDialogTitle] = useState('');
+  const [descriptionDialogText, setDescriptionDialogText] = useState('');
+  const [viewerClosing, setViewerClosing] = useState(false);
+  const [descriptionDialogClosing, setDescriptionDialogClosing] = useState(false);
+  const viewerCloseTimerRef = useRef(null);
+  const descriptionCloseTimerRef = useRef(null);
 
   useEffect(() => {
     const id = requestAnimationFrame(() => setIsVisible(true));
@@ -97,6 +120,17 @@ const DocumentsPage = () => {
     fetchDocuments();
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (viewerCloseTimerRef.current) {
+        clearTimeout(viewerCloseTimerRef.current);
+      }
+      if (descriptionCloseTimerRef.current) {
+        clearTimeout(descriptionCloseTimerRef.current);
+      }
+    };
+  }, []);
+
   const resources = useMemo(() => documents.map(buildResource), [documents]);
 
   const filteredResources = resources.filter((res) => {
@@ -105,6 +139,85 @@ const DocumentsPage = () => {
     const matchesSearch = searchText.includes(searchQuery.toLowerCase());
     return matchesFilter && matchesSearch;
   });
+
+  const closeViewer = () => {
+    if (!viewerOpen || viewerClosing) return;
+    setViewerClosing(true);
+
+    if (viewerCloseTimerRef.current) {
+      clearTimeout(viewerCloseTimerRef.current);
+    }
+
+    viewerCloseTimerRef.current = setTimeout(() => {
+      setViewerOpen(false);
+      setViewerLoading(false);
+      setViewerError('');
+      setViewerTitle('');
+      setViewerType('');
+      setViewerUrl('');
+      setViewerClosing(false);
+      viewerCloseTimerRef.current = null;
+    }, MODAL_EXIT_ANIMATION_MS);
+  };
+
+  const openViewer = async (resource) => {
+    if (!resource?.fileUrl) return;
+
+    setViewerOpen(true);
+    setViewerLoading(true);
+    setViewerError('');
+    setViewerTitle(resource.title || 'Recurso');
+    setViewerType(resource.type || 'pdf');
+    setViewerUrl('');
+    setViewerClosing(false);
+
+    try {
+      if (resource.type === 'video') {
+        const response = await api.get(`/documents/${resource.id}/embed-token`);
+        const iframeUrl = response.data?.data?.iframeUrl || '';
+        if (!iframeUrl) {
+          throw new Error('No se pudo preparar el reproductor del video.');
+        }
+        setViewerUrl(iframeUrl);
+      } else {
+        setViewerUrl(getPdfPreviewUrl(resource.fileUrl));
+      }
+    } catch (requestError) {
+      setViewerError(
+        requestError.response?.data?.message ||
+          requestError.message ||
+          'No se pudo abrir el recurso.'
+      );
+    } finally {
+      setViewerLoading(false);
+    }
+  };
+
+  const openDescriptionDialog = (resource) => {
+    setDescriptionDialogTitle(resource?.title || 'Descripción');
+    setDescriptionDialogText(
+      String(resource?.description || '').trim() || 'Este recurso no tiene descripción registrada.'
+    );
+    setDescriptionDialogOpen(true);
+    setDescriptionDialogClosing(false);
+  };
+
+  const closeDescriptionDialog = () => {
+    if (!descriptionDialogOpen || descriptionDialogClosing) return;
+    setDescriptionDialogClosing(true);
+
+    if (descriptionCloseTimerRef.current) {
+      clearTimeout(descriptionCloseTimerRef.current);
+    }
+
+    descriptionCloseTimerRef.current = setTimeout(() => {
+      setDescriptionDialogOpen(false);
+      setDescriptionDialogTitle('');
+      setDescriptionDialogText('');
+      setDescriptionDialogClosing(false);
+      descriptionCloseTimerRef.current = null;
+    }, MODAL_EXIT_ANIMATION_MS);
+  };
 
   if (loading) return <LoadingSpinner />;
 
@@ -198,11 +311,7 @@ const DocumentsPage = () => {
           {filteredResources.map((res) => (
             <div
               key={res.id}
-              onClick={() => {
-                if (res.fileUrl) {
-                  window.open(res.fileUrl, '_blank', 'noopener,noreferrer');
-                }
-              }}
+              onClick={() => openViewer(res)}
               className={`group bg-white rounded-[2.5rem] overflow-hidden border border-gray-100 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col sm:flex-row h-full ${
                 res.fileUrl ? 'cursor-pointer' : 'cursor-default'
               }`}
@@ -258,6 +367,18 @@ const DocumentsPage = () => {
                 </div>
 
                 <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      openDescriptionDialog(res);
+                    }}
+                    className="w-full bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 font-black py-3 px-4 rounded-xl transition-all flex items-center justify-center gap-2"
+                  >
+                    <BookOpen size={18} />
+                    
+                  </button>
+
                   {res.fileUrl ? (
                     <button
                       type="button"
@@ -286,6 +407,49 @@ const DocumentsPage = () => {
           ))}
         </div>
 
+        {descriptionDialogOpen && (
+          <div
+            onClick={(event) => {
+              if (event.target === event.currentTarget) {
+                closeDescriptionDialog();
+              }
+            }}
+            className={`fixed inset-0 z-50 bg-black/50 backdrop-blur-sm p-4 flex items-center justify-center transition-opacity duration-200 ${
+              descriptionDialogClosing ? 'opacity-0' : 'opacity-100'
+            }`}
+          >
+            <div
+              className={`w-full max-w-md bg-white rounded-3xl border border-gray-100 shadow-2xl overflow-hidden transition-all duration-200 ${
+                descriptionDialogClosing
+                  ? 'opacity-0 scale-95 translate-y-2'
+                  : 'opacity-100 scale-100 translate-y-0'
+              }`}
+            >
+              <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                    Descripción del recurso
+                  </p>
+                  <h4 className="text-sm font-black text-gray-900 truncate">{descriptionDialogTitle}</h4>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeDescriptionDialog}
+                  className="w-9 h-9 rounded-xl bg-gray-50 hover:bg-red-600 hover:text-white text-gray-600 transition-colors flex items-center justify-center shrink-0"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="px-5 py-4">
+                <div className="bg-gray-50 border border-gray-100 rounded-2xl p-4 text-sm leading-relaxed text-gray-700 font-medium max-h-[45vh] overflow-auto">
+                  {descriptionDialogText}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {resources.length === 0 && (
           <div className="text-center py-20">
             <h4 className="text-3xl font-black text-gray-800">No hay recursos por ahora</h4>
@@ -304,6 +468,90 @@ const DocumentsPage = () => {
           </div>
         )}
       </div>
+
+      {viewerOpen && (
+        <div
+          onClick={(event) => {
+            if (event.target === event.currentTarget) {
+              closeViewer();
+            }
+          }}
+          className={`fixed inset-0 z-50 bg-black/60 backdrop-blur-sm p-3 sm:p-6 flex items-center justify-center transition-opacity duration-200 ${
+            viewerClosing ? 'opacity-0' : 'opacity-100'
+          }`}
+        >
+          <div
+            className={`w-full max-w-6xl h-[96vh] bg-white rounded-3xl sm:rounded-[2.5rem] shadow-2xl border border-gray-100 flex flex-col overflow-hidden transition-all duration-200 ${
+              viewerClosing
+                ? 'opacity-0 scale-[0.985] translate-y-2'
+                : 'opacity-100 scale-100 translate-y-0'
+            }`}
+          >
+            <div className="px-4 sm:px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                  {viewerType === 'video' ? 'Visualizador de video' : 'Visualizador PDF'}
+                </p>
+                <h3 className="text-sm sm:text-lg font-black text-gray-900 truncate">{viewerTitle}</h3>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                {viewerType === 'pdf' && viewerUrl && (
+                  <a
+                    href={viewerUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="w-10 h-10 rounded-xl bg-gray-50 hover:bg-blue-600 hover:text-white text-blue-600 transition-colors flex items-center justify-center"
+                    title="Abrir en otra ventana"
+                  >
+                    <ExternalLink size={18} />
+                  </a>
+                )}
+                <button
+                  type="button"
+                  onClick={closeViewer}
+                  className="w-10 h-10 rounded-xl bg-gray-50 hover:bg-red-600 hover:text-white text-gray-600 transition-colors flex items-center justify-center"
+                  title="Cerrar"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 min-h-0 bg-gray-900/95">
+              {viewerLoading ? (
+                <div className="w-full h-full flex items-center justify-center text-white font-bold">
+                  Cargando visualizador...
+                </div>
+              ) : viewerError ? (
+                <div className="w-full h-full flex items-center justify-center px-6 text-center text-red-200 font-semibold">
+                  {viewerError}
+                </div>
+              ) : viewerUrl ? (
+                viewerType === 'video' ? (
+                  <iframe
+                    src={viewerUrl}
+                    title={`Video ${viewerTitle}`}
+                    className="w-full h-full border-0"
+                    sandbox="allow-same-origin allow-scripts"
+                    allow="autoplay; encrypted-media"
+                  />
+                ) : (
+                  <iframe
+                    src={viewerUrl}
+                    title={`PDF ${viewerTitle}`}
+                    className="w-full h-full border-0 bg-white"
+                  />
+                )
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-white/80 font-semibold">
+                  Recurso no disponible.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <footer className="py-6 text-center text-gray-400 text-sm border-t border-gray-100 bg-white/60 mt-auto">
         © 2026 Rosetta - Plataforma de Aula Virtual
