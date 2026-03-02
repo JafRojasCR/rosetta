@@ -15,6 +15,7 @@ import {
   Hash,
   Image as ImageIcon,
   Info,
+  ShieldAlert,
   User as UserIcon,
 } from 'lucide-react';
 import api from '../../services/api';
