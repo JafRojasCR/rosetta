@@ -80,6 +80,9 @@ const INITIAL_FORM = {
   recordingFile: null,
 };
 
+const VERCEL_FUNCTION_UPLOAD_LIMIT_BYTES = 4.5 * 1024 * 1024;
+const CLASS_VIDEO_CHUNK_SIZE_BYTES = 4 * 1024 * 1024;
+
 const AdminClassesPage = () => {
   const navigate = useNavigate();
   const [isVisible, setIsVisible] = useState(false);
@@ -339,44 +342,102 @@ const AdminClassesPage = () => {
       return;
     }
 
-    const payload = new FormData();
-    const classStudentsEntries = buildClassStudentsEntries();
-    payload.append('classCode', generatedClassCode);
-    payload.append('title', form.title.trim());
-    payload.append('description', form.description.trim());
-    payload.append('date', form.date);
-    payload.append('price', String(numericPrice));
-    payload.append('canvaUrl', form.canvaUrl.trim());
-    payload.append(
-      'subject',
-      JSON.stringify({
-        subjectId: form.subjectId,
-        name: selectedSubject.name,
-      })
-    );
-    payload.append('classStudents', JSON.stringify(classStudentsEntries));
-
-    if (form.recordingFile) {
-      payload.append('recordingFile', form.recordingFile);
-    }
-
     setSaving(true);
     setUploadProgress(0);
 
-    const requestConfig = {
-      headers: { 'Content-Type': 'multipart/form-data' },
-      onUploadProgress: (progressEvent) => {
-        if (progressEvent.total) {
-          const next = Math.min(95, Math.round((progressEvent.loaded * 95) / progressEvent.total));
-          setUploadProgress((prev) => Math.max(prev, next));
-          return;
+    const uploadRecordingByChunks = async (file) => {
+      const initResponse = await api.post('/classes/recording-upload/init', {
+        fileName: file.name,
+        mimeType: file.type || 'application/octet-stream',
+        fileSize: file.size,
+      });
+
+      const uploadUrl = initResponse.data?.data?.uploadUrl;
+      const chunkSize = Number(initResponse.data?.data?.chunkSize) || CLASS_VIDEO_CHUNK_SIZE_BYTES;
+
+      if (!uploadUrl) {
+        throw new Error('No se pudo iniciar la carga por bloques del video.');
+      }
+
+      let offset = 0;
+      let uploadedFileUrl = '';
+
+      while (offset < file.size) {
+        const endExclusive = Math.min(offset + chunkSize, file.size);
+        const chunk = file.slice(offset, endExclusive);
+        const chunkBuffer = await chunk.arrayBuffer();
+        const chunkStart = offset;
+        const chunkEnd = endExclusive - 1;
+
+        const chunkResponse = await api.put('/classes/recording-upload/chunk', chunkBuffer, {
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            'X-Upload-Url': uploadUrl,
+            'X-Chunk-Start': String(chunkStart),
+            'X-Chunk-End': String(chunkEnd),
+            'X-File-Size': String(file.size),
+            'X-Mime-Type': file.type || 'application/octet-stream',
+          },
+        });
+
+        const chunkData = chunkResponse.data?.data || {};
+        if (chunkData.done && chunkData.fileUrl) {
+          uploadedFileUrl = chunkData.fileUrl;
         }
 
-        setUploadProgress((prev) => Math.min(prev + 4, 95));
-      },
+        offset = endExclusive;
+        const uploadRatio = offset / file.size;
+        const progress = Math.min(90, Math.round(uploadRatio * 90));
+        setUploadProgress((prev) => Math.max(prev, progress));
+      }
+
+      if (!uploadedFileUrl) {
+        throw new Error('No se pudo completar la subida del video a Drive.');
+      }
+
+      return uploadedFileUrl;
     };
 
     try {
+      const payload = new FormData();
+      const classStudentsEntries = buildClassStudentsEntries();
+      payload.append('classCode', generatedClassCode);
+      payload.append('title', form.title.trim());
+      payload.append('description', form.description.trim());
+      payload.append('date', form.date);
+      payload.append('price', String(numericPrice));
+      payload.append('canvaUrl', form.canvaUrl.trim());
+      payload.append(
+        'subject',
+        JSON.stringify({
+          subjectId: form.subjectId,
+          name: selectedSubject.name,
+        })
+      );
+      payload.append('classStudents', JSON.stringify(classStudentsEntries));
+
+      if (form.recordingFile) {
+        if (form.recordingFile.size > VERCEL_FUNCTION_UPLOAD_LIMIT_BYTES) {
+          const uploadedRecordingUrl = await uploadRecordingByChunks(form.recordingFile);
+          payload.append('recordingUrl', uploadedRecordingUrl);
+        } else {
+          payload.append('recordingFile', form.recordingFile);
+        }
+      }
+
+      const requestConfig = {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: (progressEvent) => {
+          if (progressEvent.total) {
+            const next = Math.min(95, Math.round((progressEvent.loaded * 95) / progressEvent.total));
+            setUploadProgress((prev) => Math.max(prev, next));
+            return;
+          }
+
+          setUploadProgress((prev) => Math.min(prev + 4, 95));
+        },
+      };
+
       if (isEditing) {
         await api.put(`/classes/${editingClassCode}`, payload, requestConfig);
         setSuccess('Clase actualizada correctamente.');

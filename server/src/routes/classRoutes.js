@@ -4,6 +4,8 @@ const {
   getClasses,
   getClassByCode,
   createClass,
+  initClassRecordingUpload,
+  uploadClassRecordingChunk,
   updateClass,
   deleteClass,
   getClassEmbedToken,
@@ -15,6 +17,14 @@ const { protect, adminOnly, optionalAuth, studentOnly } = require('../middleware
 const uploadClassFiles = require('../middlewares/uploadClassFiles');
 
 router.get('/', getClasses);
+router.post('/recording-upload/init', protect, adminOnly, initClassRecordingUpload);
+router.put(
+  '/recording-upload/chunk',
+  protect,
+  adminOnly,
+  express.raw({ type: 'application/octet-stream', limit: '4mb' }),
+  uploadClassRecordingChunk
+);
 router.get('/embed/:token/stream', getClassEmbedStreamByToken);
 router.get('/embed/:token', getClassEmbedByToken);
 router.get('/:classCode/embed-token', protect, getClassEmbedToken);

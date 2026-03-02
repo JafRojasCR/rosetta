@@ -9,8 +9,18 @@ const {
   getDriveClient,
   uploadFileToGoogleDrive,
   deleteFileFromGoogleDrive,
+  createResumableUploadSession,
+  uploadChunkToResumableSession,
   removeTempFile,
 } = require('../services/googleDriveService');
+
+const MAX_CLASS_UPLOAD_CHUNK_BYTES = 4 * 1024 * 1024;
+
+const classUploadInitSchema = Joi.object({
+  fileName: Joi.string().trim().min(1).required(),
+  mimeType: Joi.string().trim().min(1).required(),
+  fileSize: Joi.number().integer().positive().required(),
+});
 
 const extractGoogleDriveFileId = (url = '') => {
   if (!url) return '';
@@ -541,6 +551,75 @@ const createClass = async (req, res) => {
   }
 };
 
+// POST /api/classes/recording-upload/init (admin)
+const initClassRecordingUpload = async (req, res) => {
+  const { error: validationError, value } = classUploadInitSchema.validate(req.body || {});
+  if (validationError) return error(res, validationError.details[0].message, 400);
+
+  try {
+    if (!/^video\//i.test(String(value.mimeType || ''))) {
+      return error(res, 'Solo se permite carga por chunks para archivos de video.', 400);
+    }
+
+    const session = await createResumableUploadSession({
+      fileName: value.fileName,
+      mimeType: value.mimeType,
+      fileSize: value.fileSize,
+      folderId: googleDriveClassesVideosFolderId,
+    });
+
+    return success(res, {
+      uploadUrl: session.uploadUrl,
+      chunkSize: MAX_CLASS_UPLOAD_CHUNK_BYTES,
+    });
+  } catch (err) {
+    return error(res, err.message);
+  }
+};
+
+// PUT /api/classes/recording-upload/chunk (admin)
+const uploadClassRecordingChunk = async (req, res) => {
+  const uploadUrl = String(req.headers['x-upload-url'] || '').trim();
+  const mimeType = String(req.headers['x-mime-type'] || 'application/octet-stream').trim();
+  const fileSize = Number.parseInt(String(req.headers['x-file-size'] || ''), 10);
+  const chunkStart = Number.parseInt(String(req.headers['x-chunk-start'] || ''), 10);
+  const chunkEnd = Number.parseInt(String(req.headers['x-chunk-end'] || ''), 10);
+  const chunkBuffer = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+
+  if (!uploadUrl) return error(res, 'Falta URL de sesion de subida.', 400);
+  if (!Number.isFinite(fileSize) || fileSize <= 0) return error(res, 'Tamano total invalido.', 400);
+  if (!Number.isFinite(chunkStart) || chunkStart < 0) return error(res, 'Inicio de chunk invalido.', 400);
+  if (!Number.isFinite(chunkEnd) || chunkEnd < chunkStart) return error(res, 'Fin de chunk invalido.', 400);
+  if (chunkBuffer.length === 0) return error(res, 'Chunk vacio.', 400);
+  if (chunkBuffer.length > MAX_CLASS_UPLOAD_CHUNK_BYTES) {
+    return error(res, `El chunk supera ${MAX_CLASS_UPLOAD_CHUNK_BYTES} bytes.`, 400);
+  }
+
+  const expectedLength = chunkEnd - chunkStart + 1;
+  if (expectedLength !== chunkBuffer.length) {
+    return error(res, 'Rango de chunk no coincide con el tamano enviado.', 400);
+  }
+
+  try {
+    const result = await uploadChunkToResumableSession({
+      uploadUrl,
+      chunkBuffer,
+      chunkStart,
+      chunkEnd,
+      fileSize,
+      mimeType,
+    });
+
+    return success(res, {
+      done: Boolean(result.done),
+      fileId: result.fileId || null,
+      fileUrl: result.fileUrl || null,
+    });
+  } catch (err) {
+    return error(res, err.message);
+  }
+};
+
 // PUT /api/classes/:classCode (admin)
 const updateClass = async (req, res) => {
   const schema = Joi.object({
@@ -650,6 +729,20 @@ const updateClass = async (req, res) => {
         }
       } else {
         updateData.recordingUrl = `/uploads/${recordingFile.filename}`;
+      }
+    } else if (
+      typeof updateData.recordingUrl === 'string' &&
+      updateData.recordingUrl &&
+      updateData.recordingUrl !== existingClass.recordingUrl
+    ) {
+      const previousRecordingFileId = extractGoogleDriveFileId(existingClass.recordingUrl || '');
+      const newRecordingFileId = extractGoogleDriveFileId(updateData.recordingUrl || '');
+      if (previousRecordingFileId && previousRecordingFileId !== newRecordingFileId) {
+        try {
+          await deleteFileFromGoogleDrive(previousRecordingFileId);
+        } catch (_) {
+          // no-op: avoid blocking class update if old Drive file cannot be deleted
+        }
       }
     }
 
@@ -870,6 +963,8 @@ module.exports = {
   getClasses,
   getClassByCode,
   createClass,
+  initClassRecordingUpload,
+  uploadClassRecordingChunk,
   updateClass,
   deleteClass,
   getClassEmbedToken,
