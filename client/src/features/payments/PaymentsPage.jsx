@@ -106,6 +106,19 @@ const PaymentsPage = () => {
     );
   }, [payments]);
 
+  const rejectedClassCodes = useMemo(() => {
+    return new Set(
+      (payments || [])
+        .filter((payment) => payment.status === 'rechazado')
+        .map((payment) => String(payment.classCode || '').trim())
+        .filter(Boolean)
+    );
+  }, [payments]);
+
+  const blockedClassCodes = useMemo(() => {
+    return new Set([...pendingClassCodes, ...rejectedClassCodes]);
+  }, [pendingClassCodes, rejectedClassCodes]);
+
   const availableClassesToPay = useMemo(() => {
     return (classes || [])
       .filter((cls) => {
@@ -113,7 +126,7 @@ const PaymentsPage = () => {
           (entry) => String(entry?.student?.email || '').toLowerCase() === userEmail
         );
         const classCode = String(cls.classCode || '').trim();
-        return !studentEntry?.unlocked && !pendingClassCodes.has(classCode);
+        return !studentEntry?.unlocked && !blockedClassCodes.has(classCode);
       })
       .map((cls) => ({
         id: cls.classCode,
@@ -124,7 +137,7 @@ const PaymentsPage = () => {
         subject: cls.subject?.name || 'Sin materia',
         description: cls.description || 'Sin descripción',
       }));
-  }, [classes, userEmail, pendingClassCodes]);
+  }, [classes, userEmail, blockedClassCodes]);
 
   const selectedClassData = useMemo(
     () => availableClassesToPay.find((item) => item.code === selectedClassCode) || null,
@@ -411,7 +424,7 @@ const PaymentsPage = () => {
                       {selectedClassData
                         ? `${selectedClassData.name} - ${selectedClassData.subject}`
                         : availableClassesToPay.length === 0
-                          ? 'No hay clases pendientes por pagar'
+                          ? 'No hay clases disponibles para pagar'
                           : 'Seleccionar clase'}
                     </span>
                     <ChevronDown
@@ -450,6 +463,13 @@ const PaymentsPage = () => {
                           </button>
                         ))}
                       </div>
+
+                      {rejectedClassCodes.size > 0 ? (
+                        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-xs sm:text-sm font-semibold text-red-700 flex items-start gap-2">
+                          <ShieldAlert size={16} className="mt-0.5 shrink-0" />
+                          Tienes pagos rechazados en {rejectedClassCodes.size} clase(s). Debes eliminar ese pago rechazado en el historial antes de volver a pagar esa clase.
+                        </div>
+                      ) : null}
                     </div>
                   )}
                 </div>
@@ -626,9 +646,8 @@ const PaymentsPage = () => {
                             <h4 className="font-black text-gray-900 text-lg leading-none">
                               {classData?.title || item.classCode}
                             </h4>
-                            {item.status === 'pendiente' ? (
-                              <AlertTriangle size={16} className="text-amber-500" />
-                            ) : null}
+                            {item.status === 'pendiente' ? <AlertTriangle size={16} className="text-amber-500" /> : null}
+                            {item.status === 'rechazado' ? <ShieldAlert size={16} className="text-red-500" /> : null}
                           </div>
                           <p className="text-xs font-bold text-gray-400 mt-1 uppercase tracking-tighter">
                             {item.billNumber}
@@ -653,7 +672,9 @@ const PaymentsPage = () => {
                               statusColors[item.status] || 'bg-gray-50 text-gray-700 border-gray-100'
                             }`}
                           >
-                            {item.status === 'pendiente' ? <AlertTriangle size={14} /> : <CheckCircle2 size={14} />}
+                            {item.status === 'pendiente' ? <AlertTriangle size={14} /> : null}
+                            {item.status === 'rechazado' ? <ShieldAlert size={14} /> : null}
+                            {item.status === 'aprobado' ? <CheckCircle2 size={14} /> : null}
                             {getStatusLabel(item)} • {formatDate(statusTimestamp)} {formatTime(statusTimestamp)}
                           </div>
 

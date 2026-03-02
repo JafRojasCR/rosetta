@@ -110,19 +110,25 @@ const createPayment = async (req, res) => {
       return error(res, 'Debes adjuntar el comprobante para validar el pago.', 400);
     }
 
-    const existingPendingForClass = await Payment.findOne({
+    const existingUnresolvedForClass = await Payment.findOne({
       studentEmail: req.user.email,
       classCode: value.classCode,
-      status: 'pendiente',
+      status: { $in: ['pendiente', 'rechazado'] },
     });
 
-    if (existingPendingForClass) {
+    if (existingUnresolvedForClass) {
       await removeTempFile(req.file.path);
+      const unresolvedStatus = existingUnresolvedForClass.status;
       return error(
         res,
-        'Ya tienes un pago pendiente para esta clase. Cancélalo primero para subir otro comprobante.',
+        unresolvedStatus === 'rechazado'
+          ? 'Ya tienes un pago rechazado para esta clase. Elimínalo primero para subir otro comprobante.'
+          : 'Ya tienes un pago pendiente para esta clase. Elimínalo primero para subir otro comprobante.',
         409,
-        { paymentId: existingPendingForClass.paymentId }
+        {
+          paymentId: existingUnresolvedForClass.paymentId,
+          status: unresolvedStatus,
+        }
       );
     }
 

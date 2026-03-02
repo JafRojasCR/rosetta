@@ -314,7 +314,7 @@ const AdminPaymentsPage = () => {
 
   return (
     <div
-      className={`min-h-screen bg-gray-100 font-['Poppins'] flex flex-col transition-all duration-700 ease-out ${
+      className={`min-h-screen bg-gray-100 font-['Poppins'] flex flex-col overflow-x-hidden transition-all duration-700 ease-out ${
         isVisible ? 'opacity-100' : 'opacity-0'
       }`}
     >
@@ -343,9 +343,9 @@ const AdminPaymentsPage = () => {
         </div>
       </nav>
 
-      <main className="max-w-7xl w-full mx-auto px-3 sm:px-6 py-5 sm:py-8 grid lg:grid-cols-12 gap-5 sm:gap-8">
-        <section className="lg:col-span-7 space-y-3 sm:space-y-4">
-          <div className="bg-white rounded-3xl border border-gray-100 p-4 sm:p-7">
+      <main className="max-w-7xl w-full mx-auto px-3 sm:px-6 py-5 sm:py-8 grid lg:grid-cols-12 gap-5 sm:gap-8 overflow-x-hidden">
+        <section className="lg:col-span-7 w-full max-w-3xl lg:max-w-none mx-auto space-y-3 sm:space-y-4 min-w-0">
+          <div className="bg-white rounded-3xl border border-gray-100 p-3.5 sm:p-7 min-w-0">
             <div className="flex items-center justify-between gap-3 mb-3 sm:mb-4">
               <h2 className="text-lg sm:text-xl font-extrabold text-gray-900">Pagos pendientes</h2>
               <span className="px-3 py-1 rounded-full bg-amber-50 text-amber-700 text-xs font-black border border-amber-100">
@@ -379,7 +379,7 @@ const AdminPaymentsPage = () => {
                   return (
                     <div
                       key={payment.paymentId}
-                      className={`rounded-xl sm:rounded-2xl border overflow-hidden transition-all duration-300 ease-out ${
+                      className={`rounded-xl sm:rounded-2xl border overflow-hidden min-w-0 transition-all duration-300 ease-out ${
                         isApprovingAnimation
                           ? 'opacity-0 scale-[0.985] -translate-y-1 border-emerald-200 bg-emerald-50'
                           : 'opacity-100 scale-100 translate-y-0 border-gray-100 bg-white'
@@ -406,8 +406,8 @@ const AdminPaymentsPage = () => {
                         }`}
                       >
                         <div className="overflow-hidden">
-                          <div className="px-3 sm:px-4 pb-3 sm:pb-4 bg-gray-50 border-t border-gray-100 space-y-3 sm:space-y-4">
-                          <div className="grid sm:grid-cols-2 gap-2 sm:gap-3 pt-2.5 sm:pt-3">
+                          <div className="px-2.5 sm:px-4 pb-3 sm:pb-4 bg-gray-50 border-t border-gray-100 space-y-3 sm:space-y-4 min-w-0">
+                          <div className="grid sm:grid-cols-2 gap-2 sm:gap-3 pt-2.5 sm:pt-3 min-w-0">
                             <div className="rounded-xl bg-white border border-gray-100 p-2.5 sm:p-3 relative min-w-0">
                               <button
                                 type="button"
@@ -428,7 +428,7 @@ const AdminPaymentsPage = () => {
 
                               <div
                                 data-class-info-bubble="true"
-                                className={`absolute z-20 top-full left-0 mt-2 w-max max-w-[10.5rem] rounded-lg border border-blue-100 bg-white shadow-md px-2 py-1.5 transition-all duration-200 ease-out origin-top-left ${
+                                className={`absolute z-20 top-full left-0 mt-2 w-[10.5rem] max-w-[calc(100vw-4rem)] rounded-lg border border-blue-100 bg-white shadow-md px-2 py-1.5 transition-all duration-200 ease-out origin-top-left ${
                                   isClassBubbleVisible
                                     ? 'opacity-100 translate-y-0 scale-100 pointer-events-auto'
                                     : 'opacity-0 -translate-y-1 scale-95 pointer-events-none'
@@ -449,7 +449,7 @@ const AdminPaymentsPage = () => {
                             </div>
                           </div>
 
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 min-w-0">
                             <div className="rounded-xl bg-white border border-gray-100 p-2.5 min-w-0">
                               <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Monto leído</p>
                               <p className="text-xs sm:text-sm font-bold text-gray-800 mt-1 truncate">{payment.amount ?? '--'}</p>
@@ -569,8 +569,8 @@ const AdminPaymentsPage = () => {
           </div>
         </section>
 
-        <section className="lg:col-span-5 space-y-3 sm:space-y-4">
-          <div className="bg-white rounded-3xl border border-gray-100 p-4 sm:p-6">
+        <section className="lg:col-span-5 w-full max-w-3xl lg:max-w-none mx-auto space-y-3 sm:space-y-4 min-w-0">
+          <div className="bg-white rounded-3xl border border-gray-100 p-3.5 sm:p-6 min-w-0">
             <h3 className="text-base sm:text-lg font-extrabold text-gray-900 mb-3 sm:mb-4">Comprobantes registrados</h3>
 
             <div className="space-y-3 mb-4">
@@ -603,14 +603,14 @@ const AdminPaymentsPage = () => {
                         : 'bg-amber-50 text-amber-700 border-amber-100';
 
                   return (
-                    <div key={payment.paymentId} className="rounded-xl border border-gray-100 bg-gray-50 p-2.5 sm:p-3">
+                    <div key={payment.paymentId} className="rounded-xl border border-gray-100 bg-gray-50 p-2.5 sm:p-3 min-w-0">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <p className="text-xs sm:text-sm font-black text-gray-900 truncate">{payment.classCode} · {cls?.title || 'Clase'}</p>
                           <p className="text-xs font-semibold text-gray-500 truncate">{getStudentDisplayName(payment.studentEmail)}</p>
                           <p className="text-xs font-semibold text-gray-500">{getClassSubject(cls)}</p>
                         </div>
-                        <span className={`px-2 py-1 rounded-lg border text-[10px] font-black uppercase ${statusStyles}`}>
+                        <span className={`shrink-0 px-2 py-1 rounded-lg border text-[10px] font-black uppercase ${statusStyles}`}>
                           {payment.status}
                         </span>
                       </div>
@@ -622,7 +622,7 @@ const AdminPaymentsPage = () => {
             </div>
           </div>
 
-          <div className="bg-white rounded-3xl border border-gray-100 p-4 sm:p-6">
+          <div className="bg-white rounded-3xl border border-gray-100 p-3.5 sm:p-6 min-w-0">
             <div className="flex items-center gap-2 mb-2 text-amber-600">
               <ShieldAlert size={18} />
               <p className="text-sm font-black">Regla de revisión manual</p>
