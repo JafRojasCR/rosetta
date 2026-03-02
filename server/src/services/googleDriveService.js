@@ -110,6 +110,32 @@ const deleteFileFromGoogleDrive = async (fileId) => {
   }
 };
 
+const downloadFileBufferFromGoogleDrive = async (fileId) => {
+  if (!googleDriveEnabled || !fileId) {
+    throw new Error('No se puede descargar de Google Drive sin fileId o con Drive deshabilitado.');
+  }
+
+  const drive = getDriveClient();
+
+  try {
+    const response = await drive.files.get(
+      {
+        fileId,
+        alt: 'media',
+        supportsAllDrives: true,
+      },
+      {
+        responseType: 'arraybuffer',
+      }
+    );
+
+    return Buffer.from(response.data);
+  } catch (err) {
+    const apiMessage = err?.response?.data?.error?.message || err.message;
+    throw new Error(`Error descargando archivo de Google Drive: ${apiMessage}`);
+  }
+};
+
 const removeTempFile = async (filePath) => {
   if (!filePath) return;
   try {
@@ -124,5 +150,6 @@ module.exports = {
   getDriveClient,
   uploadFileToGoogleDrive,
   deleteFileFromGoogleDrive,
+  downloadFileBufferFromGoogleDrive,
   removeTempFile,
 };

@@ -459,9 +459,21 @@ const extractTextFromPdf = async (filePath) => {
   return cleanupSpaces(parsed.text || '');
 };
 
+const extractTextFromPdfBuffer = async (buffer) => {
+  const pdfParse = require('pdf-parse');
+  const parsed = await pdfParse(buffer);
+  return cleanupSpaces(parsed.text || '');
+};
+
 const extractTextFromImage = async (filePath) => {
   const Tesseract = require('tesseract.js');
   const { data } = await Tesseract.recognize(filePath, 'spa+eng');
+  return cleanupSpaces(data?.text || '');
+};
+
+const extractTextFromImageBuffer = async (buffer) => {
+  const Tesseract = require('tesseract.js');
+  const { data } = await Tesseract.recognize(buffer, 'spa+eng');
   return cleanupSpaces(data?.text || '');
 };
 
@@ -494,8 +506,40 @@ const extractRawText = async (filePath) => {
   }
 };
 
-const extractPaymentData = async (filePath) => {
-  const text = await extractRawText(filePath);
+const extractRawTextFromBuffer = async ({ buffer, mimeType = '', fileName = '', source = 'buffer' }) => {
+  const extensionFromName = path.extname(fileName || '').toLowerCase();
+  const normalizedMime = String(mimeType || '').toLowerCase();
+  const isPdf = normalizedMime.includes('pdf') || extensionFromName === '.pdf';
+
+  try {
+    if (isPdf) {
+      const text = await extractTextFromPdfBuffer(buffer);
+      logOcr('RAW_TEXT_PDF_BUFFER', {
+        source,
+        mimeType,
+        fileName,
+        extractedChars: String(text || '').length,
+        preview: truncateForLog(text),
+      });
+      return text;
+    }
+
+    const text = await extractTextFromImageBuffer(buffer);
+    logOcr('RAW_TEXT_IMAGE_BUFFER', {
+      source,
+      mimeType,
+      fileName,
+      extractedChars: String(text || '').length,
+      preview: truncateForLog(text),
+    });
+    return text;
+  } catch (err) {
+    logOcrError('RAW_TEXT_BUFFER', err);
+    return '';
+  }
+};
+
+const buildExtractedPaymentFields = ({ text = '', contextLabel = '' }) => {
   const normalizedText = normalizeText(text);
 
   const safelyExtract = (label, extractor) => {
@@ -504,6 +548,7 @@ const extractPaymentData = async (filePath) => {
       logOcr('FIELD_EXTRACTED', {
         label,
         value,
+        contextLabel,
       });
       return value;
     } catch (err) {
@@ -519,7 +564,7 @@ const extractPaymentData = async (filePath) => {
   const detail = safelyExtract('detail', () => extractDetail(text));
   const recipient = safelyExtract('recipient', () => extractRecipient(text));
 
-  const extracted = {
+  return {
     rawText: text,
     normalizedText,
     billNumber,
@@ -529,21 +574,43 @@ const extractPaymentData = async (filePath) => {
     detail,
     recipient,
   };
+};
+
+const extractPaymentData = async (filePath) => {
+  const text = await extractRawText(filePath);
+  const extracted = buildExtractedPaymentFields({ text, contextLabel: 'filePath' });
 
   logOcr('EXTRACTION_SUMMARY', {
     filePath,
     rawTextChars: String(text || '').length,
     rawTextPreview: truncateForLog(text),
-    normalizedPreview: truncateForLog(normalizedText),
+    normalizedPreview: truncateForLog(extracted.normalizedText),
     extracted,
     guess: {
-      guessedBillNumber: billNumber,
-      guessedDateISO: paymentDate ? new Date(paymentDate).toISOString() : null,
-      guessedAmount: amount,
-      guessedClassCode: classCode,
-      guessedRecipient: recipient,
-      guessedDetail: detail,
+      guessedBillNumber: extracted.billNumber,
+      guessedDateISO: extracted.date ? new Date(extracted.date).toISOString() : null,
+      guessedAmount: extracted.amount,
+      guessedClassCode: extracted.classCode,
+      guessedRecipient: extracted.recipient,
+      guessedDetail: extracted.detail,
     },
+  });
+
+  return extracted;
+};
+
+const extractPaymentDataFromBuffer = async ({ buffer, mimeType = '', fileName = '', source = 'buffer' }) => {
+  const text = await extractRawTextFromBuffer({ buffer, mimeType, fileName, source });
+  const extracted = buildExtractedPaymentFields({ text, contextLabel: source });
+
+  logOcr('EXTRACTION_SUMMARY_BUFFER', {
+    source,
+    mimeType,
+    fileName,
+    rawTextChars: String(text || '').length,
+    rawTextPreview: truncateForLog(text),
+    normalizedPreview: truncateForLog(extracted.normalizedText),
+    extracted,
   });
 
   return extracted;
@@ -622,4 +689,9 @@ const validateExtractedPayment = ({ extractedData, classCode, classPrice }) => {
   };
 };
 
-module.exports = { extractPaymentData, validatePayment, validateExtractedPayment };
+module.exports = {
+  extractPaymentData,
+  extractPaymentDataFromBuffer,
+  validatePayment,
+  validateExtractedPayment,
+};

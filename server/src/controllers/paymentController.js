@@ -5,12 +5,14 @@ const path = require('path');
 const { success, error } = require('../utils/apiResponse');
 const {
   extractPaymentData,
+  extractPaymentDataFromBuffer,
   validatePayment,
   validateExtractedPayment,
 } = require('../services/paymentAIService');
 const {
   uploadFileToGoogleDrive,
   deleteFileFromGoogleDrive,
+  downloadFileBufferFromGoogleDrive,
   removeTempFile,
 } = require('../services/googleDriveService');
 const { googleDrivePaymentsFolderId, uploadDir } = require('../config/env');
@@ -98,6 +100,8 @@ const createPayment = async (req, res) => {
   const { error: validationError, value } = schema.validate(req.body);
   if (validationError) return error(res, validationError.details[0].message, 400);
 
+  let uploadedDriveFileId = '';
+
   try {
     const cls = await Class.findOne({ classCode: value.classCode });
     if (!cls) return error(res, 'Clase no encontrada.', 404);
@@ -122,7 +126,59 @@ const createPayment = async (req, res) => {
       );
     }
 
-    const extractedData = await extractPaymentData(req.file.path);
+    const driveUpload = await uploadFileToGoogleDrive({
+      filePath: req.file.path,
+      fileName: req.file.originalname || req.file.filename,
+      mimeType: req.file.mimetype,
+      folderId: googleDrivePaymentsFolderId,
+    });
+
+    if (!driveUpload.uploaded || !driveUpload.fileUrl || !driveUpload.fileId) {
+      await removeTempFile(req.file.path);
+      return error(
+        res,
+        'No se pudo almacenar el comprobante en Google Drive. Inténtalo nuevamente.',
+        503
+      );
+    }
+    uploadedDriveFileId = driveUpload.fileId;
+
+    const cleanupDriveUpload = async () => {
+      try {
+        await deleteFileFromGoogleDrive(driveUpload.fileId);
+      } catch (_) {
+        // ignore cleanup failures
+      }
+    };
+
+    let extractedData;
+    try {
+      extractedData = await extractPaymentData(req.file.path);
+      if (!String(extractedData?.rawText || '').trim()) {
+        throw new Error('OCR local sin texto extraído.');
+      }
+    } catch (_) {
+      try {
+        const driveBuffer = await downloadFileBufferFromGoogleDrive(driveUpload.fileId);
+        extractedData = await extractPaymentDataFromBuffer({
+          buffer: driveBuffer,
+          mimeType: req.file.mimetype,
+          fileName: req.file.originalname || req.file.filename,
+          source: `drive:${driveUpload.fileId}`,
+        });
+      } catch (fallbackError) {
+        await cleanupDriveUpload();
+        await removeTempFile(req.file.path);
+        return error(
+          res,
+          `No se pudo leer el comprobante para validar el pago (${fallbackError.message}).`,
+          400
+        );
+      }
+    }
+
+    await removeTempFile(req.file.path);
+
     const validation = validateExtractedPayment({
       extractedData,
       classCode: cls.classCode,
@@ -130,7 +186,7 @@ const createPayment = async (req, res) => {
     });
 
     if (!validation.checks.hasBillNumber) {
-      await removeTempFile(req.file.path);
+      await cleanupDriveUpload();
       return error(
         res,
         'No se detectó número de comprobante/documento. Sube una imagen más clara del recibo.',
@@ -143,7 +199,7 @@ const createPayment = async (req, res) => {
     }
 
     if (!validation.checks.hasDate) {
-      await removeTempFile(req.file.path);
+      await cleanupDriveUpload();
       return error(
         res,
         'No se detectó una fecha válida en el comprobante. Sube una imagen más clara.',
@@ -160,7 +216,7 @@ const createPayment = async (req, res) => {
     // Verificar comprobante no reutilizado
     const isValid = await validatePayment(billNumber);
     if (!isValid) {
-      await removeTempFile(req.file.path);
+      await cleanupDriveUpload();
       return error(res, 'Este comprobante ya fue utilizado.', 409, {
         checks: validation.checks,
       });
@@ -173,7 +229,7 @@ const createPayment = async (req, res) => {
     ].filter(Boolean);
 
     if (failedCoreCriteria.length >= 2) {
-      await removeTempFile(req.file.path);
+      await cleanupDriveUpload();
       return error(
         res,
         'No se pudo verificar automáticamente el comprobante. Revisa monto, destinatario y detalle, y vuelve a subirlo.',
@@ -186,18 +242,7 @@ const createPayment = async (req, res) => {
       );
     }
 
-    let billUrl = `/uploads/${req.file.filename}`;
-    const driveUpload = await uploadFileToGoogleDrive({
-      filePath: req.file.path,
-      fileName: req.file.originalname || req.file.filename,
-      mimeType: req.file.mimetype,
-      folderId: googleDrivePaymentsFolderId,
-    });
-
-    if (driveUpload.uploaded && driveUpload.fileUrl) {
-      billUrl = driveUpload.fileUrl;
-      await removeTempFile(req.file.path);
-    }
+    const billUrl = driveUpload.fileUrl;
 
     const paymentId = `PAY-${Date.now()}`;
     const paymentStatus = failedCoreCriteria.length === 1 ? 'pendiente' : 'aprobado';
@@ -218,6 +263,7 @@ const createPayment = async (req, res) => {
       validationErrors: validation.errors,
       status: paymentStatus,
     });
+    uploadedDriveFileId = '';
 
     if (payment.status === 'aprobado') {
       const student = await Student.findOne({ email: payment.studentEmail });
@@ -244,6 +290,13 @@ const createPayment = async (req, res) => {
   } catch (err) {
     if (req.file?.path) {
       await removeTempFile(req.file.path);
+    }
+    if (uploadedDriveFileId) {
+      try {
+        await deleteFileFromGoogleDrive(uploadedDriveFileId);
+      } catch (_) {
+        // ignore cleanup failures
+      }
     }
     return error(res, err.message);
   }
