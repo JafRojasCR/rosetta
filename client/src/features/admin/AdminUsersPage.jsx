@@ -26,9 +26,14 @@ const AdminUsersPage = () => {
   const [busyEmail, setBusyEmail] = useState('');
 
   useEffect(() => {
+    if (loading) {
+      setIsVisible(false);
+      return undefined;
+    }
+
     const id = requestAnimationFrame(() => setIsVisible(true));
     return () => cancelAnimationFrame(id);
-  }, []);
+  }, [loading]);
 
   const fetchStudents = async () => {
     setLoading(true);
@@ -120,7 +125,7 @@ const AdminUsersPage = () => {
         </div>
       </nav>
 
-      <main className="max-w-7xl w-full mx-auto px-4 sm:px-6 py-10 space-y-6">
+      <main className="max-w-7xl w-full mx-auto px-4 sm:px-6 py-10 space-y-6 flex-1">
         <div className="bg-white rounded-[2rem] p-5 sm:p-6 border border-gray-100 shadow-sm">
           <div className="relative group">
             <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
@@ -206,6 +211,10 @@ const AdminUsersPage = () => {
           </div>
         )}
       </main>
+
+      <footer className="py-6 text-center text-gray-400 text-sm border-t border-gray-100 bg-white/60">
+        © 2026 Rosetta - Plataforma de Aula Virtual
+      </footer>
     </div>
   );
 };

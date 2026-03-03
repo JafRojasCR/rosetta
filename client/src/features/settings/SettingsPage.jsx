@@ -60,9 +60,14 @@ const SettingsPage = () => {
   const currentUserEmail = String(user?.email || '').toLowerCase();
 
   useEffect(() => {
+    if (loading) {
+      setIsVisible(false);
+      return undefined;
+    }
+
     const id = requestAnimationFrame(() => setIsVisible(true));
     return () => cancelAnimationFrame(id);
-  }, []);
+  }, [loading]);
 
   const fetchAdmins = async () => {
     setLoading(true);
@@ -118,6 +123,19 @@ const SettingsPage = () => {
     setNewPassword('');
     setShowUpdatePassword(false);
     setShowPassModal(true);
+  };
+
+  const closeAddModal = () => {
+    setShowAddModal(false);
+  };
+
+  const closePassModal = () => {
+    setShowPassModal(false);
+  };
+
+  const closeDeleteModal = () => {
+    setShowDeleteModal(false);
+    setSelectedAdminToDelete(null);
   };
 
   const handleDeleteAdmin = async (admin) => {
@@ -229,7 +247,7 @@ const SettingsPage = () => {
         </div>
       </nav>
 
-      <main className="max-w-7xl w-full mx-auto px-6 py-10 grid grid-cols-1 lg:grid-cols-12 gap-8">
+      <main className="max-w-7xl w-full mx-auto px-6 py-10 grid grid-cols-1 lg:grid-cols-12 gap-8 flex-1">
         <div className="lg:col-span-4 space-y-6">
           <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.25em] ml-2">
             Infraestructura
@@ -368,14 +386,24 @@ const SettingsPage = () => {
       </main>
 
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm animate-in fade-in duration-300">
-          <div className="bg-white rounded-[3rem] p-8 sm:p-10 max-w-md w-full shadow-2xl animate-in zoom-in-95 duration-300">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm animate-in fade-in duration-300"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) {
+              closeAddModal();
+            }
+          }}
+        >
+          <div
+            className="bg-white rounded-[3rem] p-8 sm:p-10 max-w-md w-full shadow-2xl animate-in zoom-in-95 duration-300"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="flex justify-between items-start mb-6">
               <div className="bg-blue-50 p-4 rounded-2xl text-blue-600">
                 <Plus size={28} />
               </div>
               <button
-                onClick={() => setShowAddModal(false)}
+                onClick={closeAddModal}
                 className="p-2 hover:bg-gray-100 rounded-full text-gray-400"
                 type="button"
               >
@@ -443,14 +471,24 @@ const SettingsPage = () => {
       )}
 
       {showPassModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm animate-in fade-in duration-300">
-          <div className="bg-white rounded-[3rem] p-8 sm:p-10 max-w-md w-full shadow-2xl animate-in zoom-in-95 duration-300">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm animate-in fade-in duration-300"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) {
+              closePassModal();
+            }
+          }}
+        >
+          <div
+            className="bg-white rounded-[3rem] p-8 sm:p-10 max-w-md w-full shadow-2xl animate-in zoom-in-95 duration-300"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="flex justify-between items-start mb-6">
               <div className="bg-blue-50 p-4 rounded-2xl text-blue-600">
                 <KeyRound size={28} />
               </div>
               <button
-                onClick={() => setShowPassModal(false)}
+                onClick={closePassModal}
                 className="p-2 hover:bg-gray-100 rounded-full text-gray-400"
                 type="button"
               >
@@ -498,17 +536,24 @@ const SettingsPage = () => {
       )}
 
       {showDeleteModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm animate-in fade-in duration-300">
-          <div className="bg-white rounded-[3rem] p-8 sm:p-10 max-w-md w-full shadow-2xl animate-in zoom-in-95 duration-300">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm animate-in fade-in duration-300"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) {
+              closeDeleteModal();
+            }
+          }}
+        >
+          <div
+            className="bg-white rounded-[3rem] p-8 sm:p-10 max-w-md w-full shadow-2xl animate-in zoom-in-95 duration-300"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="flex justify-between items-start mb-6">
               <div className="bg-red-50 p-4 rounded-2xl text-red-600">
                 <Trash2 size={28} />
               </div>
               <button
-                onClick={() => {
-                  setShowDeleteModal(false);
-                  setSelectedAdminToDelete(null);
-                }}
+                onClick={closeDeleteModal}
                 className="p-2 hover:bg-gray-100 rounded-full text-gray-400"
                 type="button"
               >
@@ -525,10 +570,7 @@ const SettingsPage = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <button
                 type="button"
-                onClick={() => {
-                  setShowDeleteModal(false);
-                  setSelectedAdminToDelete(null);
-                }}
+                onClick={closeDeleteModal}
                 className="w-full py-3.5 rounded-2xl font-black bg-gray-100 text-gray-600 hover:bg-gray-200 transition-all"
               >
                 Cancelar
@@ -553,7 +595,7 @@ const SettingsPage = () => {
         </div>
       )}
 
-       <footer className="py-6 text-center text-gray-400 text-sm border-t border-gray-100 bg-white/60">
+      <footer className="py-6 text-center text-gray-400 text-sm border-t border-gray-100 bg-white/60">
         © 2026 Rosetta - Plataforma de Aula Virtual
       </footer>
 

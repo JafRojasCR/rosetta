@@ -151,8 +151,16 @@ const PaymentsPage = () => {
   );
 
   useEffect(() => {
-    const id = requestAnimationFrame(() => setIsVisible(true));
+    if (loading) {
+      setIsVisible(false);
+      return undefined;
+    }
 
+    const id = requestAnimationFrame(() => setIsVisible(true));
+    return () => cancelAnimationFrame(id);
+  }, [loading]);
+
+  useEffect(() => {
     const fetchPayments = async () => {
       try {
         const [paymentsResponse, classesResponse] = await Promise.all([
@@ -180,7 +188,6 @@ const PaymentsPage = () => {
     document.addEventListener('mousedown', handleClickOutside);
 
     return () => {
-      cancelAnimationFrame(id);
       document.removeEventListener('mousedown', handleClickOutside);
       if (previewUrl) {
         URL.revokeObjectURL(previewUrl);

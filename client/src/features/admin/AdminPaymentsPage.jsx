@@ -55,6 +55,12 @@ const getGoogleDriveFileId = (url = '') => {
 const getPaymentImageUrl = (billUrl = '') => {
   const fileId = getGoogleDriveFileId(billUrl);
   if (!fileId) return billUrl;
+  return `https://drive.google.com/thumbnail?id=${fileId}&sz=w1600`;
+};
+
+const getPaymentImageDriveUrl = (billUrl = '') => {
+  const fileId = getGoogleDriveFileId(billUrl);
+  if (!fileId) return billUrl;
   return `https://drive.google.com/uc?export=view&id=${fileId}`;
 };
 
@@ -73,6 +79,7 @@ const AdminPaymentsPage = () => {
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState('');
   const [expandedPendingId, setExpandedPendingId] = useState('');
+  const [expandedRegisteredId, setExpandedRegisteredId] = useState('');
   const [payments, setPayments] = useState([]);
   const [classes, setClasses] = useState([]);
   const [students, setStudents] = useState([]);
@@ -92,9 +99,14 @@ const AdminPaymentsPage = () => {
   const approvalTimersRef = useRef({});
 
   useEffect(() => {
+    if (loading) {
+      setIsVisible(false);
+      return undefined;
+    }
+
     const id = requestAnimationFrame(() => setIsVisible(true));
     return () => cancelAnimationFrame(id);
-  }, []);
+  }, [loading]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -310,12 +322,40 @@ const AdminPaymentsPage = () => {
     });
   };
 
+  const handleReceiptImageError = (event, billUrl = '') => {
+    const image = event.currentTarget;
+    const fallbackStep = Number(image.dataset.fallbackStep || '0');
+    const originalUrl = String(billUrl || '').trim();
+    const driveUrl = getPaymentImageDriveUrl(originalUrl);
+    const lh3Url = getPaymentImageLh3Url(originalUrl);
+
+    if (fallbackStep <= 0 && driveUrl) {
+      image.dataset.fallbackStep = '1';
+      image.src = driveUrl;
+      return;
+    }
+
+    if (fallbackStep <= 1 && lh3Url) {
+      image.dataset.fallbackStep = '2';
+      image.src = lh3Url;
+      return;
+    }
+
+    if (fallbackStep <= 2 && originalUrl) {
+      image.dataset.fallbackStep = '3';
+      image.src = originalUrl;
+      return;
+    }
+
+    image.style.display = 'none';
+  };
+
   if (loading) return <LoadingSpinner />;
 
   return (
     <div
       className={`min-h-screen bg-gray-100 font-['Poppins'] flex flex-col overflow-x-hidden transition-all duration-700 ease-out ${
-        isVisible ? 'opacity-100' : 'opacity-0'
+        isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
       }`}
     >
       <style>
@@ -490,6 +530,7 @@ const AdminPaymentsPage = () => {
                                 <img
                                   src={getPaymentImageUrl(payment.billUrl)}
                                   alt={`Comprobante ${payment.paymentId}`}
+                                  data-fallback-step="0"
                                   className="w-full max-h-44 sm:max-h-56 object-contain bg-gray-50 rounded-lg border border-gray-100 cursor-zoom-in transition-transform duration-200 hover:scale-[1.01]"
                                   onClick={(event) => {
                                     event.stopPropagation();
@@ -499,25 +540,7 @@ const AdminPaymentsPage = () => {
                                       alt: `Comprobante ${payment.paymentId}`,
                                     });
                                   }}
-                                  onError={(event) => {
-                                    const image = event.currentTarget;
-                                    const originalUrl = String(payment.billUrl || '').trim();
-                                    const lh3Url = getPaymentImageLh3Url(originalUrl);
-
-                                    if (image.dataset.fallbackStep !== '1' && lh3Url && image.src !== lh3Url) {
-                                      image.dataset.fallbackStep = '1';
-                                      image.src = lh3Url;
-                                      return;
-                                    }
-
-                                    if (image.dataset.fallbackStep !== '2' && originalUrl && image.src !== originalUrl) {
-                                      image.dataset.fallbackStep = '2';
-                                      image.src = originalUrl;
-                                      return;
-                                    }
-
-                                    image.style.display = 'none';
-                                  }}
+                                  onError={(event) => handleReceiptImageError(event, payment.billUrl)}
                                 />
                                 <a
                                   href={payment.billUrl}
@@ -595,26 +618,100 @@ const AdminPaymentsPage = () => {
               ) : (
                 sortablePayments.map((payment) => {
                   const cls = classesByCode[String(payment.classCode || '').trim()];
+                  const isApproved = payment.status === 'aprobado';
+                  const isExpanded = isApproved && expandedRegisteredId === payment.paymentId;
                   const statusStyles =
-                    payment.status === 'aprobado'
+                    isApproved
                       ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
                       : payment.status === 'rechazado'
                         ? 'bg-red-50 text-red-700 border-red-100'
                         : 'bg-amber-50 text-amber-700 border-amber-100';
 
                   return (
-                    <div key={payment.paymentId} className="rounded-xl border border-gray-100 bg-gray-50 p-2.5 sm:p-3 min-w-0">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="text-xs sm:text-sm font-black text-gray-900 truncate">{payment.classCode} · {cls?.title || 'Clase'}</p>
-                          <p className="text-xs font-semibold text-gray-500 truncate">{getStudentDisplayName(payment.studentEmail)}</p>
-                          <p className="text-xs font-semibold text-gray-500">{getClassSubject(cls)}</p>
+                    <div key={payment.paymentId} className="rounded-xl border border-gray-100 bg-gray-50 min-w-0 overflow-hidden">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!isApproved) return;
+                          setExpandedRegisteredId((prev) =>
+                            prev === payment.paymentId ? '' : payment.paymentId
+                          );
+                        }}
+                        className={`w-full p-2.5 sm:p-3 text-left transition-colors ${
+                          isApproved ? 'hover:bg-gray-100/60 cursor-pointer' : 'cursor-default'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-xs sm:text-sm font-black text-gray-900 truncate">{payment.classCode} · {cls?.title || 'Clase'}</p>
+                            <p className="text-xs font-semibold text-gray-500 truncate">{getStudentDisplayName(payment.studentEmail)}</p>
+                            <p className="text-xs font-semibold text-gray-500">{getClassSubject(cls)}</p>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className={`px-2 py-1 rounded-lg border text-[10px] font-black uppercase ${statusStyles}`}>
+                              {payment.status}
+                            </span>
+                            {isApproved ? (
+                              <ChevronDown
+                                size={14}
+                                className={`text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                              />
+                            ) : null}
+                          </div>
                         </div>
-                        <span className={`shrink-0 px-2 py-1 rounded-lg border text-[10px] font-black uppercase ${statusStyles}`}>
-                          {payment.status}
-                        </span>
+                        <p className="mt-2 text-[11px] font-bold text-gray-400">{formatDateTime(payment.updatedAt || payment.createdAt)}</p>
+                      </button>
+
+                      <div
+                        className={`grid transition-all duration-300 ease-out ${
+                          isExpanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+                        }`}
+                      >
+                        <div className="overflow-hidden">
+                          {isApproved ? (
+                            <div className="px-2.5 sm:px-3 pb-3">
+                              <div className="rounded-xl bg-white border border-gray-100 p-2.5 sm:p-3">
+                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Imagen del comprobante</p>
+                                {payment.billUrl ? (
+                                  <div className="space-y-2">
+                                    <img
+                                      src={getPaymentImageUrl(payment.billUrl)}
+                                      alt={`Comprobante ${payment.paymentId}`}
+                                      data-fallback-step="0"
+                                      className="w-full max-h-44 sm:max-h-56 object-contain bg-gray-50 rounded-lg border border-gray-100 cursor-zoom-in transition-transform duration-200 hover:scale-[1.01]"
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        const nextSrc = event.currentTarget.currentSrc || event.currentTarget.src;
+                                        openImageZoom({
+                                          src: nextSrc,
+                                          alt: `Comprobante ${payment.paymentId}`,
+                                        });
+                                      }}
+                                      onError={(event) => handleReceiptImageError(event, payment.billUrl)}
+                                    />
+                                    <a
+                                      href={payment.billUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="inline-flex items-center gap-1 text-xs font-black text-blue-600 hover:text-blue-700"
+                                      onClick={(event) => event.stopPropagation()}
+                                    >
+                                      <ExternalLink size={14} /> Abrir comprobante
+                                    </a>
+                                    <p className="text-[11px] font-bold text-gray-400">
+                                      Toca la imagen para hacer zoom.
+                                    </p>
+                                  </div>
+                                ) : (
+                                  <div className="h-28 rounded-lg border border-dashed border-gray-200 bg-gray-50 flex items-center justify-center text-gray-400 text-sm font-semibold">
+                                    <ImageIcon size={16} className="mr-2" /> No hay imagen disponible.
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
                       </div>
-                      <p className="mt-2 text-[11px] font-bold text-gray-400">{formatDateTime(payment.updatedAt || payment.createdAt)}</p>
                     </div>
                   );
                 })

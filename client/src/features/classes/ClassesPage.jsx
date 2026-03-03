@@ -53,9 +53,14 @@ const ClassesPage = () => {
   const sortAnimTimerRef = useRef(null);
 
   useEffect(() => {
+    if (loading) {
+      setIsVisible(false);
+      return undefined;
+    }
+
     const id = requestAnimationFrame(() => setIsVisible(true));
     return () => cancelAnimationFrame(id);
-  }, []);
+  }, [loading]);
 
   useEffect(() => {
     return () => {

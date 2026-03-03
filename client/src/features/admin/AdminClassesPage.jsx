@@ -553,7 +553,7 @@ const AdminClassesPage = () => {
         </div>
       </nav>
 
-      <main className="max-w-7xl w-full mx-auto px-4 sm:px-6 py-10 grid lg:grid-cols-12 gap-8">
+      <main className="max-w-7xl w-full mx-auto px-4 sm:px-6 py-10 grid lg:grid-cols-12 gap-8 flex-1">
         <section className="lg:col-span-7">
           <div className="bg-white rounded-[2.5rem] p-8 sm:p-10 shadow-sm border border-gray-100">
             <div className="flex items-center gap-4 mb-8">
@@ -947,6 +947,10 @@ const AdminClassesPage = () => {
           )}
         </section>
       </main>
+
+      <footer className="py-6 text-center text-gray-400 text-sm border-t border-gray-100 bg-white/60">
+        © 2026 Rosetta - Plataforma de Aula Virtual
+      </footer>
     </div>
   );
 };

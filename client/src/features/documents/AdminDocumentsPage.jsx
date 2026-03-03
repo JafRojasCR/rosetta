@@ -120,7 +120,7 @@ const AdminDocumentsPage = () => {
 
   return (
     <div
-      className={`min-h-screen bg-gray-100 font-['Poppins'] transform transition-all duration-700 ease-out ${
+      className={`min-h-screen bg-gray-100 font-['Poppins'] flex flex-col transform transition-all duration-700 ease-out ${
         isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
       }`}
     >
@@ -149,7 +149,7 @@ const AdminDocumentsPage = () => {
         </div>
       </nav>
 
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-10">
+      <main className="max-w-3xl w-full mx-auto px-4 sm:px-6 py-10 flex-1">
         <div className="bg-white rounded-[2.5rem] p-8 sm:p-10 shadow-sm border border-gray-100">
           <div className="mb-8">
             <h2 className="text-xl font-extrabold text-gray-900">Carga de documentos</h2>
@@ -291,7 +291,11 @@ const AdminDocumentsPage = () => {
             )}
           </div>
         </div>
-      </div>
+      </main>
+
+      <footer className="py-6 text-center text-gray-400 text-sm border-t border-gray-100 bg-white/60">
+        © 2026 Rosetta - Plataforma de Aula Virtual
+      </footer>
     </div>
   );
 };

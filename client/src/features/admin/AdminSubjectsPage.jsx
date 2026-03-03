@@ -188,7 +188,7 @@ const AdminSubjectsPage = () => {
         </div>
       </nav>
 
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 py-10 w-full">
+      <main className="max-w-4xl mx-auto px-4 sm:px-6 py-10 w-full flex-1">
         <div className="bg-white rounded-[2.5rem] p-8 sm:p-10 shadow-sm border border-gray-100">
           <h2 className="text-2xl font-extrabold text-gray-900 mb-2">Crear materia</h2>
           <p className="text-gray-500 font-medium mb-8">
@@ -321,7 +321,11 @@ const AdminSubjectsPage = () => {
             </div>
           )}
         </div>
-      </div>
+      </main>
+
+      <footer className="py-6 text-center text-gray-400 text-sm border-t border-gray-100 bg-white/60">
+        © 2026 Rosetta - Plataforma de Aula Virtual
+      </footer>
     </div>
   );
 };
