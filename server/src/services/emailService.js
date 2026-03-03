@@ -121,7 +121,7 @@ const buildRosettaCodeHtml = ({ code, title, description, warning }) => `<!DOCTY
                     <p class="description">${description}</p>
 
                     <div class="code-container">
-                        <span class="verification-code">${code}</span>
+                      <span class="verification-code">${code}&nbsp;</span>
                     </div>
 
                     <p class="warning">${warning}</p>
@@ -129,7 +129,7 @@ const buildRosettaCodeHtml = ({ code, title, description, warning }) => `<!DOCTY
             </tr>
             <tr>
                 <td class="footer">
-                    &copy; 2026 Rosetta &bull; Aula Virtual
+                    &nbsp;&copy; 2026 Rosetta &bull; Aula Virtual
                 </td>
             </tr>
         </table>
@@ -245,7 +245,7 @@ const buildRosettaResetLinkHtml = ({ resetUrl }) => `<!DOCTYPE html>
       </tr>
       <tr>
         <td class="footer">
-          &copy; 2026 Rosetta &bull; Aula Virtual
+          &nbsp;&copy; 2026 Rosetta &bull; Aula Virtual
         </td>
       </tr>
     </table>

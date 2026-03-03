@@ -1,9 +1,23 @@
 const Student = require('../models/Student');
 const Class = require('../models/Class');
 const Admin = require('../models/Admin');
+const Payment = require('../models/Payment');
+const path = require('path');
 const { success, error } = require('../utils/apiResponse');
+const { deleteFileFromGoogleDrive, removeTempFile } = require('../services/googleDriveService');
+const { uploadDir } = require('../config/env');
 const Joi = require('joi');
 const strongPasswordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
+
+const extractGoogleDriveFileId = (url = '') => {
+  const idFromQuery = String(url || '').match(/[?&]id=([^&]+)/);
+  if (idFromQuery?.[1]) return idFromQuery[1];
+
+  const idFromPath = String(url || '').match(/\/d\/([^/]+)/);
+  if (idFromPath?.[1]) return idFromPath[1];
+
+  return '';
+};
 
 // GET /api/admin/admins
 const getAdmins = async (_req, res) => {
@@ -193,8 +207,38 @@ const updateMyProfile = async (req, res) => {
 // DELETE /api/admin/profile (student self-delete)
 const deleteMyAccount = async (req, res) => {
   try {
-    const student = await Student.findOneAndDelete({ email: req.user.email });
+    const normalizedEmail = String(req.user?.email || '').toLowerCase();
+    const student = await Student.findOne({ email: normalizedEmail });
     if (!student) return error(res, 'Estudiante no encontrado.', 404);
+
+    const studentPayments = await Payment.find({ studentEmail: normalizedEmail }).select(
+      '_id billUrl'
+    );
+
+    await Promise.allSettled(
+      studentPayments.map(async (payment) => {
+        const billUrl = String(payment.billUrl || '');
+
+        const driveFileId = extractGoogleDriveFileId(billUrl);
+        if (driveFileId) {
+          try {
+            await deleteFileFromGoogleDrive(driveFileId);
+          } catch (_) {
+            // ignore cleanup failures
+          }
+        }
+
+        if (billUrl.startsWith('/uploads/')) {
+          const fileName = billUrl.replace(/^\/uploads\//, '');
+          const localFilePath = path.resolve(__dirname, '..', uploadDir, fileName);
+          await removeTempFile(localFilePath);
+        }
+      })
+    );
+
+    await Payment.deleteMany({ studentEmail: normalizedEmail });
+
+    await Student.deleteOne({ _id: student._id });
 
     await Class.updateMany(
       {},
