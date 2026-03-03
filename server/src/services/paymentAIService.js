@@ -225,6 +225,13 @@ const isProbablyDetailValue = (value = '') => {
     return false;
   }
 
+  const compact = normalized.replace(/\s+/g, '');
+  const isMaskedAccountLike =
+    /^X{2,}(?:[-X\d])*$/i.test(compact) ||
+    /^CRX{2,}(?:[-X\d])*$/i.test(compact) ||
+    (/(?:X{2,}[-\s]?){3,}/i.test(normalized) && /\d/.test(normalized));
+  if (isMaskedAccountLike) return false;
+
   const lettersCount = (normalized.match(/[A-Z]/g) || []).length;
   const digitsCount = (normalized.match(/\d/g) || []).length;
   const xMaskCount = (normalized.match(/X/g) || []).length;
@@ -331,8 +338,22 @@ const extractDetail = (text = '') => {
         if (value && isProbablyDetailValue(value)) return value;
       }
 
+      const isConceptLabel = /CONCEPTO/.test(normalizedLine);
+
+      const previousLine = lines[index - 1] || '';
+      const normalizedPrevious = normalizeText(previousLine);
       const nextLine = lines[index + 1] || '';
       const normalizedNext = normalizeText(nextLine);
+
+      if (
+        isConceptLabel &&
+        previousLine &&
+        !/(FECHA|HORA|MONTO|COMISION|REFERENCIA|COMPROBANTE|DESTINATARIO|BENEFICIARIO)/.test(normalizedPrevious) &&
+        isProbablyDetailValue(previousLine)
+      ) {
+        return cleanupSpaces(previousLine);
+      }
+
       if (
         nextLine &&
         !/(FECHA|HORA|MONTO|COMISION|REFERENCIA|COMPROBANTE|DESTINATARIO|BENEFICIARIO)/.test(normalizedNext) &&
@@ -341,8 +362,6 @@ const extractDetail = (text = '') => {
         return cleanupSpaces(nextLine);
       }
 
-      const previousLine = lines[index - 1] || '';
-      const normalizedPrevious = normalizeText(previousLine);
       if (
         previousLine &&
         !/(FECHA|HORA|MONTO|COMISION|REFERENCIA|COMPROBANTE|DESTINATARIO|BENEFICIARIO)/.test(normalizedPrevious) &&

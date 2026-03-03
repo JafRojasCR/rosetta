@@ -204,19 +204,6 @@ const createPayment = async (req, res) => {
       );
     }
 
-    if (!validation.checks.hasDate) {
-      await cleanupDriveUpload();
-      return error(
-        res,
-        'No se detectó una fecha válida en el comprobante. Sube una imagen más clara.',
-        400,
-        {
-          checks: validation.checks,
-          validationErrors: validation.errors,
-        }
-      );
-    }
-
     const billNumber = String(extractedData.billNumber || '').trim();
 
     // Verificar comprobante no reutilizado
@@ -234,7 +221,9 @@ const createPayment = async (req, res) => {
       validation.checks.detailMatches ? null : 'detalle',
     ].filter(Boolean);
 
-    if (failedCoreCriteria.length >= 2) {
+    const coreFailuresCount = failedCoreCriteria.length;
+
+    if (coreFailuresCount >= 2) {
       await cleanupDriveUpload();
       return error(
         res,
@@ -251,7 +240,7 @@ const createPayment = async (req, res) => {
     const billUrl = driveUpload.fileUrl;
 
     const paymentId = `PAY-${Date.now()}`;
-    const paymentStatus = failedCoreCriteria.length === 1 ? 'pendiente' : 'aprobado';
+    const paymentStatus = coreFailuresCount === 1 ? 'pendiente' : 'aprobado';
     const resolvedAmount = Number.isFinite(validation.resolvedAmount)
       ? validation.resolvedAmount
       : extractedData.amount;
