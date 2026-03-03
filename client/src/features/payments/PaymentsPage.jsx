@@ -841,7 +841,7 @@ const PaymentsPage = () => {
         </div>
       ) : null}
 
-      <footer className="py-8 text-center text-gray-400 text-sm border-t border-gray-100 bg-white/60 mt-auto">
+      <footer className="py-4 sm:py-6 text-center text-gray-400 text-xs sm:text-sm border-t border-gray-100 bg-white/60 mt-auto">
         © 2026 Rosetta - Plataforma de Aula Virtual
       </footer>
 

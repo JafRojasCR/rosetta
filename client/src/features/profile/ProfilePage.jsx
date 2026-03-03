@@ -494,7 +494,7 @@ const ProfilePage = () => {
         </div>
       )}
 
-      <footer className="py-6 text-center text-gray-400 text-sm border-t border-gray-100 bg-white/60">
+      <footer className="py-4 sm:py-6 text-center text-gray-400 text-xs sm:text-sm border-t border-gray-100 bg-white/60">
         © 2026 Rosetta - Plataforma de Aula Virtual
       </footer>
     </div>
