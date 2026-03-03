@@ -4,6 +4,8 @@ import { ArrowLeft, UploadCloud, FileText, Trash2 } from 'lucide-react';
 import api from '../../services/api';
 import CustomSelectMenu from '../../components/CustomSelectMenu';
 
+const DOCUMENT_UPLOAD_CHUNK_SIZE_BYTES = 32 * 1024 * 1024;
+
 const AdminDocumentsPage = () => {
   const navigate = useNavigate();
   const [isVisible, setIsVisible] = useState(false);
@@ -79,18 +81,75 @@ const AdminDocumentsPage = () => {
       return;
     }
 
-    const payload = new FormData();
-    payload.append('title', form.title.trim());
-    payload.append('description', form.description.trim());
-    payload.append('subject[subjectId]', form.subjectId.trim());
-    payload.append('subject[name]', selectedSubject.name);
-    payload.append('file', file);
-
     setLoading(true);
     try {
-      await api.post('/documents', payload, {
-        headers: { 'Content-Type': 'multipart/form-data' },
+      const initResponse = await api.post('/documents/upload/init', {
+        fileName: file.name,
+        mimeType: file.type || 'application/octet-stream',
+        fileSize: file.size,
       });
+
+      const uploadUrl = initResponse.data?.data?.uploadUrl;
+      const chunkSize = Number(initResponse.data?.data?.chunkSize) || DOCUMENT_UPLOAD_CHUNK_SIZE_BYTES;
+      if (!uploadUrl) {
+        throw new Error('No se pudo iniciar la carga del recurso en Drive.');
+      }
+
+      let offset = 0;
+      let uploadedFileId = '';
+
+      while (offset < file.size) {
+        const endExclusive = Math.min(offset + chunkSize, file.size);
+        const chunk = file.slice(offset, endExclusive);
+        const chunkBuffer = await chunk.arrayBuffer();
+        const chunkStart = offset;
+        const chunkEnd = endExclusive - 1;
+
+        const uploadResponse = await api.put('/documents/upload/chunk', chunkBuffer, {
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            'X-Upload-Url': uploadUrl,
+            'X-Chunk-Start': String(chunkStart),
+            'X-Chunk-End': String(chunkEnd),
+            'X-File-Size': String(file.size),
+            'X-Mime-Type': file.type || 'application/octet-stream',
+          },
+        });
+
+        const chunkData = uploadResponse.data?.data || {};
+
+        if (chunkData.done) {
+          uploadedFileId = String(chunkData.fileId || '').trim();
+        }
+
+        offset = endExclusive;
+      }
+
+      if (!uploadedFileId) {
+        throw new Error('Google Drive no devolvió fileId al completar la carga.');
+      }
+
+      const completeResponse = await api.post('/documents/upload/complete', {
+        fileId: uploadedFileId,
+      });
+
+      const uploadedFileUrl = completeResponse.data?.data?.fileUrl || '';
+      if (!uploadedFileUrl) {
+        throw new Error('No se pudo obtener la URL pública del recurso.');
+      }
+
+      await api.post('/documents', {
+        title: form.title.trim(),
+        description: form.description.trim(),
+        subject: {
+          subjectId: form.subjectId.trim(),
+          name: selectedSubject.name,
+        },
+        fileUrl: uploadedFileUrl,
+        driveFileId: uploadedFileId,
+        mimeType: file.type || 'application/octet-stream',
+      });
+
       setSuccess('Recurso cargado correctamente.');
       setForm({ title: '', description: '', subjectId: '' });
       setFile(null);

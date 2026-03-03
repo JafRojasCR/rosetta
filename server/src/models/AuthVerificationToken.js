@@ -46,6 +46,11 @@ const authVerificationTokenSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+    lockedUntil: {
+      type: Date,
+      default: null,
+      index: true,
+    },
     consumedAt: {
       type: Date,
       default: null,

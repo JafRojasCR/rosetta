@@ -1,8 +1,10 @@
 const jwt = require('jsonwebtoken');
 const { jwtSecret } = require('../config/env');
 const { error } = require('../utils/apiResponse');
+const Student = require('../models/Student');
+const Admin = require('../models/Admin');
 
-const protect = (req, res, next) => {
+const protect = async (req, res, next) => {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return error(res, 'No autorizado. Token requerido.', 401);
@@ -10,6 +12,26 @@ const protect = (req, res, next) => {
   const token = authHeader.split(' ')[1];
   try {
     const decoded = jwt.verify(token, jwtSecret);
+
+    let account = null;
+    if (decoded?.role === 'admin') {
+      account = await Admin.findById(decoded.id).select('sessionVersion');
+    } else {
+      account = await Student.findById(decoded.id).select('sessionVersion');
+    }
+
+    if (!account) {
+      return error(res, 'Usuario no encontrado.', 401);
+    }
+
+    const tokenSessionVersion = Number(decoded?.sv ?? 0);
+    const currentSessionVersion = Number(account.sessionVersion || 0);
+    if (tokenSessionVersion !== currentSessionVersion) {
+      return error(res, 'La sesión fue cerrada porque se inició en otro dispositivo.', 401, {
+        code: 'SESSION_REVOKED',
+      });
+    }
+
     req.user = decoded;
     next();
   } catch (err) {

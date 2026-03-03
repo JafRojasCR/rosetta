@@ -80,8 +80,7 @@ const INITIAL_FORM = {
   recordingFile: null,
 };
 
-const VERCEL_FUNCTION_UPLOAD_LIMIT_BYTES = 4.5 * 1024 * 1024;
-const CLASS_VIDEO_CHUNK_SIZE_BYTES = 4 * 1024 * 1024;
+const CLASS_VIDEO_CHUNK_SIZE_BYTES = 32 * 1024 * 1024;
 
 const AdminClassesPage = () => {
   const navigate = useNavigate();
@@ -369,7 +368,7 @@ const AdminClassesPage = () => {
         const chunkStart = offset;
         const chunkEnd = endExclusive - 1;
 
-        const chunkResponse = await api.put('/classes/recording-upload/chunk', chunkBuffer, {
+        const uploadResponse = await api.put('/classes/recording-upload/chunk', chunkBuffer, {
           headers: {
             'Content-Type': 'application/octet-stream',
             'X-Upload-Url': uploadUrl,
@@ -380,9 +379,16 @@ const AdminClassesPage = () => {
           },
         });
 
-        const chunkData = chunkResponse.data?.data || {};
-        if (chunkData.done && chunkData.fileUrl) {
-          uploadedFileUrl = chunkData.fileUrl;
+        const chunkData = uploadResponse.data?.data || {};
+
+        if (chunkData.done) {
+          const fileId = String(chunkData.fileId || '').trim();
+          if (!fileId) throw new Error('No se pudo obtener el fileId de Drive.');
+
+          const completeResponse = await api.post('/classes/recording-upload/complete', {
+            fileId,
+          });
+          uploadedFileUrl = completeResponse.data?.data?.fileUrl || '';
         }
 
         offset = endExclusive;
@@ -417,12 +423,8 @@ const AdminClassesPage = () => {
       payload.append('classStudents', JSON.stringify(classStudentsEntries));
 
       if (form.recordingFile) {
-        if (form.recordingFile.size > VERCEL_FUNCTION_UPLOAD_LIMIT_BYTES) {
-          const uploadedRecordingUrl = await uploadRecordingByChunks(form.recordingFile);
-          payload.append('recordingUrl', uploadedRecordingUrl);
-        } else {
-          payload.append('recordingFile', form.recordingFile);
-        }
+        const uploadedRecordingUrl = await uploadRecordingByChunks(form.recordingFile);
+        payload.append('recordingUrl', uploadedRecordingUrl);
       }
 
       const requestConfig = {

@@ -58,6 +58,34 @@ const getDriveAccessToken = async () => {
   return token;
 };
 
+const finalizeDriveFileUpload = async ({ fileId }) => {
+  if (!googleDriveEnabled || !fileId) {
+    throw new Error('No se puede finalizar archivo en Drive sin fileId o con Drive deshabilitado.');
+  }
+
+  const drive = getDriveClient();
+
+  await drive.permissions.create({
+    fileId,
+    requestBody: {
+      role: 'reader',
+      type: 'anyone',
+    },
+    supportsAllDrives: true,
+  });
+
+  const metadata = await drive.files.get({
+    fileId,
+    fields: 'id,webViewLink,webContentLink',
+    supportsAllDrives: true,
+  });
+
+  return {
+    fileId,
+    fileUrl: metadata.data.webViewLink || metadata.data.webContentLink || null,
+  };
+};
+
 const uploadFileToGoogleDrive = async ({ filePath, fileName, mimeType, folderId }) => {
   if (!googleDriveEnabled) {
     return { uploaded: false, fileUrl: null, fileId: null };
@@ -87,25 +115,12 @@ const uploadFileToGoogleDrive = async ({ filePath, fileName, mimeType, folderId 
 
   const fileId = created.data.id;
 
-  await drive.permissions.create({
-    fileId,
-    requestBody: {
-      role: 'reader',
-      type: 'anyone',
-    },
-    supportsAllDrives: true,
-  });
-
-  const metadata = await drive.files.get({
-    fileId,
-    fields: 'id,webViewLink,webContentLink',
-    supportsAllDrives: true,
-  });
+  const metadata = await finalizeDriveFileUpload({ fileId });
 
   return {
     uploaded: true,
     fileId,
-    fileUrl: metadata.data.webViewLink || metadata.data.webContentLink,
+    fileUrl: metadata.fileUrl,
   };
 };
 
@@ -211,27 +226,13 @@ const uploadChunkToResumableSession = async ({
     throw new Error('Drive completo la carga pero no devolvio fileId.');
   }
 
-  const drive = getDriveClient();
-  await drive.permissions.create({
-    fileId,
-    requestBody: {
-      role: 'reader',
-      type: 'anyone',
-    },
-    supportsAllDrives: true,
-  });
-
-  const metadata = await drive.files.get({
-    fileId,
-    fields: 'id,webViewLink,webContentLink',
-    supportsAllDrives: true,
-  });
+  const metadata = await finalizeDriveFileUpload({ fileId });
 
   return {
     done: true,
     status: response.status,
     fileId,
-    fileUrl: metadata.data.webViewLink || metadata.data.webContentLink || null,
+    fileUrl: metadata.fileUrl,
   };
 };
 
@@ -279,5 +280,6 @@ module.exports = {
   downloadFileBufferFromGoogleDrive,
   createResumableUploadSession,
   uploadChunkToResumableSession,
+  finalizeDriveFileUpload,
   removeTempFile,
 };

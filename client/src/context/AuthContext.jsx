@@ -3,6 +3,26 @@ import api from '../services/api';
 
 export const AuthContext = createContext(null);
 const PENDING_2FA_KEY = 'pending2fa';
+const DEVICE_ID_KEY = 'rosettaDeviceId';
+
+const createDeviceId = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+
+  return `dev-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+};
+
+const getOrCreateDeviceId = () => {
+  if (typeof window === 'undefined') return '';
+
+  const stored = localStorage.getItem(DEVICE_ID_KEY);
+  if (stored) return stored;
+
+  const next = createDeviceId();
+  localStorage.setItem(DEVICE_ID_KEY, next);
+  return next;
+};
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -68,31 +88,50 @@ export const AuthProvider = ({ children }) => {
     return { user: userData, role: resolvedRole, requiresTwoFactor: false };
   };
 
-  const verifyTwoFactor = async (code) => {
+  const verifyTwoFactor = async (code, options = {}) => {
     if (!pendingTwoFactor?.verificationToken) {
       throw new Error('No hay una verificación pendiente. Inicia sesión nuevamente.');
     }
 
-    const response = await api.post('/auth/verify-2fa', {
-      verificationToken: pendingTwoFactor.verificationToken,
-      code,
-    });
+    try {
+      const response = await api.post('/auth/verify-2fa', {
+        verificationToken: pendingTwoFactor.verificationToken,
+        code,
+        forceTakeover: Boolean(options.forceTakeover),
+        takeoverToken: options.takeoverToken || '',
+        deviceId: getOrCreateDeviceId(),
+      });
 
-    const { user: userData, token, role: resolvedRole } = response.data.data || {};
-    if (!token || !userData) {
-      throw new Error('No se pudo completar la verificación 2FA.');
+      const { user: userData, token, role: resolvedRole } = response.data.data || {};
+      if (!token || !userData) {
+        throw new Error('No se pudo completar la verificación 2FA.');
+      }
+
+      localStorage.setItem('token', token);
+      localStorage.setItem('user', JSON.stringify(userData));
+      localStorage.setItem('role', resolvedRole || 'student');
+
+      setUser(userData);
+      setRole(resolvedRole || 'student');
+      setPendingTwoFactor(null);
+      sessionStorage.removeItem(PENDING_2FA_KEY);
+
+      return { user: userData, role: resolvedRole || 'student' };
+    } catch (requestError) {
+      const details = requestError.response?.data?.errors || requestError.response?.data?.details || {};
+      if (
+        requestError.response?.status === 409 &&
+        details?.code === 'ACTIVE_SESSION_EXISTS'
+      ) {
+        return {
+          requiresSessionTakeover: true,
+          takeoverToken: details.takeoverToken,
+          activeSession: details.activeSession || null,
+        };
+      }
+
+      throw requestError;
     }
-
-    localStorage.setItem('token', token);
-    localStorage.setItem('user', JSON.stringify(userData));
-    localStorage.setItem('role', resolvedRole || 'student');
-
-    setUser(userData);
-    setRole(resolvedRole || 'student');
-    setPendingTwoFactor(null);
-    sessionStorage.removeItem(PENDING_2FA_KEY);
-
-    return { user: userData, role: resolvedRole || 'student' };
   };
 
   const resendTwoFactor = async () => {
@@ -124,6 +163,12 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
+    if (localStorage.getItem('token')) {
+      api.post('/auth/logout').catch(() => {
+        // no-op: local cleanup still proceeds
+      });
+    }
+
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     localStorage.removeItem('role');

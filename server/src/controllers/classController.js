@@ -11,15 +11,21 @@ const {
   deleteFileFromGoogleDrive,
   createResumableUploadSession,
   uploadChunkToResumableSession,
+  finalizeDriveFileUpload,
   removeTempFile,
 } = require('../services/googleDriveService');
 
-const MAX_CLASS_UPLOAD_CHUNK_BYTES = 4 * 1024 * 1024;
+const MAX_CLASS_UPLOAD_CHUNK_BYTES =
+  process.env.VERCEL ? 4 * 1024 * 1024 : 32 * 1024 * 1024;
 
 const classUploadInitSchema = Joi.object({
   fileName: Joi.string().trim().min(1).required(),
   mimeType: Joi.string().trim().min(1).required(),
   fileSize: Joi.number().integer().positive().required(),
+});
+
+const classUploadCompleteSchema = Joi.object({
+  fileId: Joi.string().trim().min(1).required(),
 });
 
 const extractGoogleDriveFileId = (url = '') => {
@@ -620,6 +626,26 @@ const uploadClassRecordingChunk = async (req, res) => {
   }
 };
 
+// POST /api/classes/recording-upload/complete (admin)
+const completeClassRecordingUpload = async (req, res) => {
+  const { error: validationError, value } = classUploadCompleteSchema.validate(req.body || {});
+  if (validationError) return error(res, validationError.details[0].message, 400);
+
+  try {
+    const finalized = await finalizeDriveFileUpload({ fileId: value.fileId });
+    if (!finalized.fileUrl) {
+      return error(res, 'No se pudo obtener la URL pública del video en Drive.', 500);
+    }
+
+    return success(res, {
+      fileId: finalized.fileId,
+      fileUrl: finalized.fileUrl,
+    });
+  } catch (err) {
+    return error(res, err.message);
+  }
+};
+
 // PUT /api/classes/:classCode (admin)
 const updateClass = async (req, res) => {
   const schema = Joi.object({
@@ -967,6 +993,7 @@ module.exports = {
   createClass,
   initClassRecordingUpload,
   uploadClassRecordingChunk,
+  completeClassRecordingUpload,
   updateClass,
   deleteClass,
   getClassEmbedToken,

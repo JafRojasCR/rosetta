@@ -24,9 +24,11 @@ const TwoFactorPage = () => {
   const [isSuccess, setIsSuccess] = useState(false);
   const [code, setCode] = useState(['', '', '', '', '', '']);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [isTakingOverSession, setIsTakingOverSession] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [sessionConflict, setSessionConflict] = useState(null);
   const inputs = useRef([]);
 
   useEffect(() => {
@@ -101,13 +103,55 @@ const TwoFactorPage = () => {
     setSuccess('');
 
     try {
-      await verifyTwoFactor(finalCode);
+      const result = await verifyTwoFactor(finalCode);
+      if (result?.requiresSessionTakeover) {
+        setSessionConflict(result);
+        return;
+      }
+
       setSuccess('Código verificado correctamente.');
       setIsSuccess(true);
     } catch (requestError) {
       setError(requestError.response?.data?.message || 'No se pudo verificar el código.');
     } finally {
       setIsVerifying(false);
+    }
+  };
+
+  const handleCancelSessionTakeover = () => {
+    setSessionConflict(null);
+    setError('Inicio de sesión cancelado por sesión activa en otro dispositivo.');
+  };
+
+  const handleConfirmSessionTakeover = async () => {
+    if (!sessionConflict?.takeoverToken) {
+      setSessionConflict(null);
+      setError('No se pudo validar el traspaso de sesión. Inicia sesión de nuevo.');
+      return;
+    }
+
+    setIsTakingOverSession(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      const result = await verifyTwoFactor('', {
+        forceTakeover: true,
+        takeoverToken: sessionConflict.takeoverToken,
+      });
+
+      if (result?.requiresSessionTakeover) {
+        setSessionConflict(result);
+        return;
+      }
+
+      setSessionConflict(null);
+      setSuccess('Sesión trasladada correctamente a este dispositivo.');
+      setIsSuccess(true);
+    } catch (requestError) {
+      setError(requestError.response?.data?.message || 'No se pudo trasladar la sesión.');
+    } finally {
+      setIsTakingOverSession(false);
     }
   };
 
@@ -118,7 +162,7 @@ const TwoFactorPage = () => {
     setSuccess('');
     try {
       await resendTwoFactor();
-      setResendCooldown(60);
+      setResendCooldown(30);
       setSuccess('Código reenviado. Revisa tu correo.');
     } catch (requestError) {
       setError(requestError.response?.data?.message || 'No se pudo reenviar el código.');
@@ -141,6 +185,46 @@ const TwoFactorPage = () => {
       style={isSuccess ? { animation: 'twoFactorFall 0.95s forwards' } : {}}
     >
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap');`}</style>
+
+      {sessionConflict && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="bg-white rounded-[2.5rem] p-6 sm:p-8 max-w-md w-full shadow-2xl animate-in zoom-in-95 duration-300">
+            <h3 className="text-xl sm:text-2xl font-black text-gray-900 mb-2">Sesión activa detectada</h3>
+            <p className="text-sm text-gray-500 font-medium mb-5">
+              Ya hay una sesión abierta con esta cuenta en otro dispositivo. Puedes cancelar este inicio o mover la sesión aquí.
+            </p>
+
+            <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4 mb-6">
+              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Sesión actual</p>
+              <p className="text-xs font-semibold text-gray-600 break-words">
+                {sessionConflict.activeSession?.userAgent || 'Dispositivo no identificado'}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={handleCancelSessionTakeover}
+                disabled={isTakingOverSession}
+                className="w-full py-3.5 rounded-2xl font-black bg-gray-100 text-gray-600 hover:bg-gray-200 transition-all disabled:opacity-60"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmSessionTakeover}
+                disabled={isTakingOverSession}
+                className="w-full py-3.5 rounded-2xl font-black bg-blue-600 text-white hover:bg-blue-700 transition-all flex items-center justify-center gap-2 disabled:opacity-60"
+              >
+                {isTakingOverSession ? (
+                  <div className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                ) : null}
+                Mover sesión aquí
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="max-w-md w-full">
         <button
@@ -207,10 +291,10 @@ const TwoFactorPage = () => {
 
             <button
               type="button"
-              disabled={!isComplete || isVerifying}
+              disabled={!isComplete || isVerifying || isTakingOverSession}
               onClick={handleVerify}
               className={`w-full py-5 rounded-[1.5rem] font-black text-xl transition-all flex items-center justify-center gap-3 mb-8 ${
-                isComplete && !isVerifying
+                isComplete && !isVerifying && !isTakingOverSession
                   ? 'bg-blue-600 text-white shadow-xl shadow-blue-200 hover:bg-blue-700 active:scale-95'
                   : 'bg-gray-100 text-gray-300 cursor-not-allowed'
               }`}

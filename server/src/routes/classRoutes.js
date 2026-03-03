@@ -1,11 +1,13 @@
 const express = require('express');
 const router = express.Router();
+const classChunkRawLimit = process.env.VERCEL ? '4mb' : '40mb';
 const {
   getClasses,
   getClassByCode,
   createClass,
   initClassRecordingUpload,
   uploadClassRecordingChunk,
+  completeClassRecordingUpload,
   updateClass,
   deleteClass,
   getClassEmbedToken,
@@ -18,11 +20,12 @@ const uploadClassFiles = require('../middlewares/uploadClassFiles');
 
 router.get('/', getClasses);
 router.post('/recording-upload/init', protect, adminOnly, initClassRecordingUpload);
+router.post('/recording-upload/complete', protect, adminOnly, completeClassRecordingUpload);
 router.put(
   '/recording-upload/chunk',
   protect,
   adminOnly,
-  express.raw({ type: 'application/octet-stream', limit: '4mb' }),
+  express.raw({ type: 'application/octet-stream', limit: classChunkRawLimit }),
   uploadClassRecordingChunk
 );
 router.get('/embed/:token/stream', getClassEmbedStreamByToken);

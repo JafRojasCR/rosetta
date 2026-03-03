@@ -28,7 +28,14 @@ api.interceptors.response.use(
       if (error.config && !error.config.url.includes('/auth/login')) {
         localStorage.removeItem('token');
         localStorage.removeItem('user');
-        window.location.href = '/login';
+        localStorage.removeItem('role');
+
+        const reason =
+          (error.response?.data?.errors?.code || error.response?.data?.details?.code) ===
+          'SESSION_REVOKED'
+          ? '?reason=session-revoked'
+          : '';
+        window.location.href = `/login${reason}`;
       }
     }
     return Promise.reject(error);

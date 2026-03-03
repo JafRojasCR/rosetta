@@ -19,6 +19,17 @@ const adminSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    sessionVersion: {
+      type: Number,
+      default: 0,
+    },
+    activeSession: {
+      deviceId: { type: String, default: '' },
+      userAgent: { type: String, default: '' },
+      ip: { type: String, default: '' },
+      startedAt: { type: Date, default: null },
+      lastSeenAt: { type: Date, default: null },
+    },
   },
   { timestamps: true }
 );

@@ -8,8 +8,24 @@ const {
   getDriveClient,
   uploadFileToGoogleDrive,
   deleteFileFromGoogleDrive,
+  createResumableUploadSession,
+  uploadChunkToResumableSession,
+  finalizeDriveFileUpload,
   removeTempFile,
 } = require('../services/googleDriveService');
+
+const MAX_DOCUMENT_UPLOAD_CHUNK_BYTES =
+  process.env.VERCEL ? 4 * 1024 * 1024 : 32 * 1024 * 1024;
+
+const documentUploadInitSchema = Joi.object({
+  fileName: Joi.string().trim().min(1).required(),
+  mimeType: Joi.string().trim().min(1).required(),
+  fileSize: Joi.number().integer().positive().required(),
+});
+
+const documentUploadCompleteSchema = Joi.object({
+  fileId: Joi.string().trim().min(1).required(),
+});
 
 const buildSecureVideoPlayerHtml = (streamUrl) => `<!doctype html>
 <html lang="es">
@@ -296,27 +312,43 @@ const createDocument = async (req, res) => {
       subjectId: Joi.string().required(),
       name: Joi.string().required(),
     }).required(),
+    fileUrl: Joi.string().uri().allow('').optional(),
+    driveFileId: Joi.string().allow('').optional(),
+    mimeType: Joi.string().allow('').optional(),
   });
 
   const { error: validationError, value } = schema.validate(req.body);
   if (validationError) return error(res, validationError.details[0].message, 400);
 
   try {
-    if (!req.file) return error(res, 'Archivo requerido.', 400);
+    let fileUrl = '';
+    let driveFileId = '';
+    let mimeType = '';
 
-    let fileUrl = `/uploads/${req.file.filename}`;
-    const type = req.file.mimetype.startsWith('video/') ? 'video' : 'pdf';
+    if (req.file) {
+      fileUrl = `/uploads/${req.file.filename}`;
+      mimeType = req.file.mimetype;
 
-    const driveUpload = await uploadFileToGoogleDrive({
-      filePath: req.file.path,
-      fileName: req.file.originalname || req.file.filename,
-      mimeType: req.file.mimetype,
-    });
+      const driveUpload = await uploadFileToGoogleDrive({
+        filePath: req.file.path,
+        fileName: req.file.originalname || req.file.filename,
+        mimeType: req.file.mimetype,
+      });
 
-    if (driveUpload.uploaded && driveUpload.fileUrl) {
-      fileUrl = driveUpload.fileUrl;
-      await removeTempFile(req.file.path);
+      if (driveUpload.uploaded && driveUpload.fileUrl) {
+        fileUrl = driveUpload.fileUrl;
+        driveFileId = driveUpload.fileId || '';
+        await removeTempFile(req.file.path);
+      }
+    } else if (value.fileUrl && value.driveFileId && value.mimeType) {
+      fileUrl = value.fileUrl;
+      driveFileId = value.driveFileId;
+      mimeType = value.mimeType;
+    } else {
+      return error(res, 'Archivo requerido.', 400);
     }
+
+    const type = String(mimeType || '').startsWith('video/') ? 'video' : 'pdf';
 
     const docId = `DOC-${Date.now()}`;
     const doc = await Document.create({
@@ -325,7 +357,7 @@ const createDocument = async (req, res) => {
       type,
       date: new Date(),
       fileUrl,
-      driveFileId: driveUpload.fileId || '',
+      driveFileId,
       adminEmail: req.user.email,
     });
 
@@ -334,6 +366,90 @@ const createDocument = async (req, res) => {
     if (req.file?.path) {
       await removeTempFile(req.file.path);
     }
+    return error(res, err.message);
+  }
+};
+
+// POST /api/documents/upload/init (admin)
+const initDocumentUpload = async (req, res) => {
+  const { error: validationError, value } = documentUploadInitSchema.validate(req.body || {});
+  if (validationError) return error(res, validationError.details[0].message, 400);
+
+  try {
+    const session = await createResumableUploadSession({
+      fileName: value.fileName,
+      mimeType: value.mimeType,
+      fileSize: value.fileSize,
+    });
+
+    return success(res, {
+      uploadUrl: session.uploadUrl,
+      chunkSize: MAX_DOCUMENT_UPLOAD_CHUNK_BYTES,
+    });
+  } catch (err) {
+    return error(res, err.message);
+  }
+};
+
+// POST /api/documents/upload/complete (admin)
+const completeDocumentUpload = async (req, res) => {
+  const { error: validationError, value } = documentUploadCompleteSchema.validate(req.body || {});
+  if (validationError) return error(res, validationError.details[0].message, 400);
+
+  try {
+    const finalized = await finalizeDriveFileUpload({ fileId: value.fileId });
+    if (!finalized.fileUrl) {
+      return error(res, 'No se pudo obtener la URL pública del archivo en Drive.', 500);
+    }
+
+    return success(res, {
+      fileId: finalized.fileId,
+      fileUrl: finalized.fileUrl,
+    });
+  } catch (err) {
+    return error(res, err.message);
+  }
+};
+
+// PUT /api/documents/upload/chunk (admin)
+const uploadDocumentChunk = async (req, res) => {
+  const uploadUrl = String(req.headers['x-upload-url'] || '').trim();
+  const mimeType = String(req.headers['x-mime-type'] || 'application/octet-stream').trim();
+  const fileSize = Number.parseInt(String(req.headers['x-file-size'] || ''), 10);
+  const chunkStart = Number.parseInt(String(req.headers['x-chunk-start'] || ''), 10);
+  const chunkEnd = Number.parseInt(String(req.headers['x-chunk-end'] || ''), 10);
+  const chunkBuffer = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+
+  if (!uploadUrl) return error(res, 'Falta URL de sesion de subida.', 400);
+  if (!Number.isFinite(fileSize) || fileSize <= 0) return error(res, 'Tamano total invalido.', 400);
+  if (!Number.isFinite(chunkStart) || chunkStart < 0) return error(res, 'Inicio de chunk invalido.', 400);
+  if (!Number.isFinite(chunkEnd) || chunkEnd < chunkStart) return error(res, 'Fin de chunk invalido.', 400);
+  if (chunkBuffer.length === 0) return error(res, 'Chunk vacio.', 400);
+  if (chunkBuffer.length > MAX_DOCUMENT_UPLOAD_CHUNK_BYTES) {
+    return error(res, `El chunk supera ${MAX_DOCUMENT_UPLOAD_CHUNK_BYTES} bytes.`, 400);
+  }
+
+  const expectedLength = chunkEnd - chunkStart + 1;
+  if (expectedLength !== chunkBuffer.length) {
+    return error(res, 'Rango de chunk no coincide con el tamano enviado.', 400);
+  }
+
+  try {
+    const result = await uploadChunkToResumableSession({
+      uploadUrl,
+      chunkBuffer,
+      chunkStart,
+      chunkEnd,
+      fileSize,
+      mimeType,
+    });
+
+    return success(res, {
+      done: Boolean(result.done),
+      fileId: result.fileId || null,
+      fileUrl: result.fileUrl || null,
+    });
+  } catch (err) {
     return error(res, err.message);
   }
 };
@@ -389,6 +505,9 @@ module.exports = {
   getDocumentEmbedToken,
   getDocumentEmbedByToken,
   getDocumentEmbedStreamByToken,
+  initDocumentUpload,
+  uploadDocumentChunk,
+  completeDocumentUpload,
   createDocument,
   updateDocument,
   deleteDocument,

@@ -10,12 +10,39 @@ const Joi = require('joi');
 
 const generateToken = (payload) => jwt.sign(payload, jwtSecret, { expiresIn: jwtExpiresIn });
 const generateResetToken = (payload) => jwt.sign(payload, jwtSecret, { expiresIn: '15m' });
+const generateTakeoverToken = (payload) => jwt.sign(payload, jwtSecret, { expiresIn: '5m' });
 
 const generateCode = () => Math.floor(100000 + Math.random() * 900000).toString();
 const strongPasswordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
 const hashValue = (value) => crypto.createHash('sha256').update(String(value)).digest('hex');
 const VERIFICATION_EXPIRY_MS = 10 * 60 * 1000;
 const MAX_OTP_ATTEMPTS = 5;
+const OTP_LOCK_MS = 30 * 1000;
+
+const normalizeDeviceId = (value = '') => String(value || '').trim().slice(0, 120);
+
+const getClientIp = (req) => {
+  const forwarded = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  if (forwarded) return forwarded;
+  return String(req.ip || req.socket?.remoteAddress || '').trim();
+};
+
+const getClientUserAgent = (req) =>
+  String(req.headers['user-agent'] || '')
+    .replace(/[\r\n\t]+/g, ' ')
+    .trim()
+    .slice(0, 255);
+
+const buildSessionSnapshot = (req, requestedDeviceId = '') => {
+  const now = new Date();
+  return {
+    deviceId: normalizeDeviceId(requestedDeviceId),
+    userAgent: getClientUserAgent(req),
+    ip: getClientIp(req),
+    startedAt: now,
+    lastSeenAt: now,
+  };
+};
 
 const findAccountByEmail = async (email) => {
   const normalizedEmail = String(email || '').toLowerCase();
@@ -74,23 +101,52 @@ const findRecordByToken = async (verificationToken, purpose) => {
 const validateVerificationCode = async (record, code) => {
   if (!record) return { ok: false, message: 'Solicitud de verificación no válida.' };
 
+  if (record.lockedUntil && record.lockedUntil.getTime() > Date.now()) {
+    const remainingSeconds = Math.max(
+      1,
+      Math.ceil((record.lockedUntil.getTime() - Date.now()) / 1000)
+    );
+    return {
+      ok: false,
+      message: `Demasiados intentos. Espera ${remainingSeconds}s para volver a intentar.`,
+    };
+  }
+
   if (record.expiresAt.getTime() < Date.now()) {
     return { ok: false, message: 'Código expirado. Solicita un nuevo código.' };
   }
 
-  if (record.attempts >= MAX_OTP_ATTEMPTS) {
-    return { ok: false, message: 'Demasiados intentos. Solicita un nuevo código.' };
-  }
-
   const matched = isCodeMatch(record, code);
   if (!matched) {
-    await AuthVerificationToken.updateOne({ _id: record._id }, { $inc: { attempts: 1 } });
+    const nextAttempts = Number(record.attempts || 0) + 1;
+    if (nextAttempts >= MAX_OTP_ATTEMPTS) {
+      const lockedUntil = new Date(Date.now() + OTP_LOCK_MS);
+      await AuthVerificationToken.updateOne(
+        { _id: record._id },
+        {
+          $set: {
+            attempts: 0,
+            lockedUntil,
+          },
+        }
+      );
+
+      return {
+        ok: false,
+        message: 'Demasiados intentos. Espera 30s para volver a intentar.',
+      };
+    }
+
+    await AuthVerificationToken.updateOne(
+      { _id: record._id },
+      { $set: { attempts: nextAttempts } }
+    );
     return { ok: false, message: 'Código inválido o expirado.' };
   }
 
   await AuthVerificationToken.updateOne(
     { _id: record._id },
-    { $set: { consumedAt: new Date() } }
+    { $set: { consumedAt: new Date(), lockedUntil: null, attempts: 0 } }
   );
   return { ok: true };
 };
@@ -122,7 +178,12 @@ const register = async (req, res) => {
     if (existsStudent || existsAdmin) return error(res, 'El correo ya está registrado.', 409);
 
     const student = await Student.create(value);
-    const token = generateToken({ id: student._id, email: student.email, role: 'student' });
+    const token = generateToken({
+      id: student._id,
+      email: student.email,
+      role: 'student',
+      sv: Number(student.sessionVersion || 0),
+    });
 
     return success(res, { user: student, token, role: 'student' }, 'Registro exitoso', 201);
   } catch (err) {
@@ -190,6 +251,7 @@ const resend2FA = async (req, res) => {
     const code = generateCode();
     record.codeHash = hashValue(code);
     record.attempts = 0;
+    record.lockedUntil = null;
     record.expiresAt = new Date(Date.now() + VERIFICATION_EXPIRY_MS);
     await record.save();
 
@@ -204,35 +266,111 @@ const resend2FA = async (req, res) => {
 // POST /api/auth/verify-2fa
 const verify2FA = async (req, res) => {
   const schema = Joi.object({
-    verificationToken: Joi.string().required(),
-    code: Joi.string().length(6).required(),
+    verificationToken: Joi.string().optional(),
+    code: Joi.string().length(6).optional(),
+    deviceId: Joi.string().allow('').optional(),
+    forceTakeover: Joi.boolean().optional().default(false),
+    takeoverToken: Joi.string().allow('').optional(),
   });
 
   const { error: validationError, value } = schema.validate(req.body);
   if (validationError) return error(res, validationError.details[0].message, 400);
 
   try {
-    const record = await findRecordByToken(value.verificationToken, 'login_2fa');
-    const validation = await validateVerificationCode(record, value.code);
-    if (!validation.ok) return error(res, validation.message, 400);
+    const requestedDeviceId = normalizeDeviceId(value.deviceId || req.headers['x-device-id'] || '');
 
     let user;
-    if (record.role === 'admin') {
-      user = await Admin.findById(record.userId);
+    let resolvedRole = null;
+
+    if (value.forceTakeover) {
+      if (!value.takeoverToken) {
+        return error(res, 'Token de traspaso de sesión requerido.', 400);
+      }
+
+      let takeoverPayload;
+      try {
+        takeoverPayload = jwt.verify(value.takeoverToken, jwtSecret);
+      } catch (_takeoverError) {
+        return error(res, 'Solicitud de traspaso inválida o expirada.', 400);
+      }
+
+      if (takeoverPayload?.type !== 'session_takeover' || !takeoverPayload?.userId || !takeoverPayload?.role) {
+        return error(res, 'Solicitud de traspaso inválida o expirada.', 400);
+      }
+
+      resolvedRole = takeoverPayload.role;
+      if (resolvedRole === 'admin') {
+        user = await Admin.findById(takeoverPayload.userId);
+      } else {
+        user = await Student.findById(takeoverPayload.userId);
+      }
+
+      if (!user || String(user.email || '').toLowerCase() !== String(takeoverPayload.email || '').toLowerCase()) {
+        return error(res, 'Usuario no encontrado.', 404);
+      }
     } else {
-      user = await Student.findById(record.userId);
+      if (!value.verificationToken || !value.code) {
+        return error(res, 'Código y token de verificación requeridos.', 400);
+      }
+
+      const record = await findRecordByToken(value.verificationToken, 'login_2fa');
+      const validation = await validateVerificationCode(record, value.code);
+      if (!validation.ok) return error(res, validation.message, 400);
+
+      resolvedRole = record.role;
+      if (record.role === 'admin') {
+        user = await Admin.findById(record.userId);
+      } else {
+        user = await Student.findById(record.userId);
+      }
+
+      if (!user || String(user.email || '').toLowerCase() !== String(record.email || '').toLowerCase()) {
+        return error(res, 'Usuario no encontrado.', 404);
+      }
+
+      const currentDeviceId = normalizeDeviceId(user.activeSession?.deviceId || '');
+      const hasCurrentActiveSession = Boolean(currentDeviceId && user.activeSession?.startedAt);
+      const isSameDevice = Boolean(currentDeviceId && requestedDeviceId && currentDeviceId === requestedDeviceId);
+
+      if (hasCurrentActiveSession && !isSameDevice) {
+        const takeoverToken = generateTakeoverToken({
+          type: 'session_takeover',
+          userId: user._id,
+          email: user.email,
+          role: resolvedRole,
+        });
+
+        return error(
+          res,
+          'Ya existe una sesión activa en otro dispositivo.',
+          409,
+          {
+            code: 'ACTIVE_SESSION_EXISTS',
+            takeoverToken,
+            activeSession: {
+              userAgent: String(user.activeSession?.userAgent || ''),
+              ip: String(user.activeSession?.ip || ''),
+              lastSeenAt: user.activeSession?.lastSeenAt || user.activeSession?.startedAt || null,
+            },
+          }
+        );
+      }
     }
 
-    if (!user || String(user.email || '').toLowerCase() !== String(record.email || '').toLowerCase()) {
-      return error(res, 'Usuario no encontrado.', 404);
-    }
-
+    const nextSessionVersion = Number(user.sessionVersion || 0) + 1;
+    user.sessionVersion = nextSessionVersion;
     user.lastLoginAt = new Date();
+    user.activeSession = buildSessionSnapshot(req, requestedDeviceId || `device-${Date.now()}`);
     await user.save();
 
-    const token = generateToken({ id: user._id, email: user.email, role: record.role });
+    const token = generateToken({
+      id: user._id,
+      email: user.email,
+      role: resolvedRole,
+      sv: nextSessionVersion,
+    });
 
-    return success(res, { user, token, role: record.role }, 'Verificación exitosa');
+    return success(res, { user, token, role: resolvedRole }, 'Verificación exitosa');
   } catch (err) {
     return error(res, err.message);
   }
@@ -402,6 +540,35 @@ const changePassword = async (req, res) => {
   }
 };
 
+// POST /api/auth/logout
+const logout = async (req, res) => {
+  try {
+    let account;
+
+    if (req.user.role === 'admin') {
+      account = await Admin.findById(req.user.id);
+    } else {
+      account = await Student.findById(req.user.id);
+    }
+
+    if (!account) return error(res, 'Usuario no encontrado.', 404);
+
+    account.sessionVersion = Number(account.sessionVersion || 0) + 1;
+    account.activeSession = {
+      deviceId: '',
+      userAgent: '',
+      ip: '',
+      startedAt: null,
+      lastSeenAt: null,
+    };
+    await account.save();
+
+    return success(res, null, 'Sesión cerrada correctamente.');
+  } catch (err) {
+    return error(res, err.message);
+  }
+};
+
 module.exports = {
   register,
   login,
@@ -412,4 +579,5 @@ module.exports = {
   resetPassword,
   getMe,
   changePassword,
+  logout,
 };
