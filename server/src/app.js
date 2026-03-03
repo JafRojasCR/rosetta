@@ -30,7 +30,26 @@ const limiter = rateLimit({
   max: 200,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => {
+    const url = String(req.originalUrl || '');
+    return (
+      url.startsWith('/api/classes/recording-upload/') ||
+      url.startsWith('/api/documents/upload/')
+    );
+  },
   message: { success: false, message: 'Demasiadas solicitudes. Intenta de nuevo más tarde.' },
+});
+
+// Dedicated limiter for chunked uploads (high threshold to avoid blocking large files)
+const uploadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 2000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'Muchas solicitudes de carga en poco tiempo. Espera un momento y continúa.',
+  },
 });
 
 // Stricter rate limit for auth endpoints
@@ -44,6 +63,8 @@ const authLimiter = rateLimit({
 
 app.use('/api', limiter);
 app.use('/api/auth', authLimiter);
+app.use('/api/classes/recording-upload', uploadLimiter);
+app.use('/api/documents/upload', uploadLimiter);
 
 // Servir archivos estáticos (uploads)
 app.use('/uploads', express.static(uploadsPath));
