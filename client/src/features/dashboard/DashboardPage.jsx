@@ -164,7 +164,7 @@ const DashboardPage = () => {
 
       <div
         className={`flex-grow flex flex-col items-center px-4 sm:px-6 ${
-          isAdmin ? 'pt-6 pb-8 overflow-y-auto' : 'justify-center mt-3 sm:-mt-10'
+          isAdmin ? 'pt-6 pb-8 overflow-y-auto' : 'justify-center mt-3 sm:-mt-10 pb-4 sm:pb-0'
         }`}
       >
         <header className="text-center mb-8 sm:mb-10">
