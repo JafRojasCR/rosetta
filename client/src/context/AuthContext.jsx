@@ -94,13 +94,21 @@ export const AuthProvider = ({ children }) => {
     }
 
     try {
-      const response = await api.post('/auth/verify-2fa', {
-        verificationToken: pendingTwoFactor.verificationToken,
-        code,
-        forceTakeover: Boolean(options.forceTakeover),
-        takeoverToken: options.takeoverToken || '',
-        deviceId: getOrCreateDeviceId(),
-      });
+      const isTakeover = Boolean(options.forceTakeover);
+      const payload = isTakeover
+        ? {
+            forceTakeover: true,
+            takeoverToken: options.takeoverToken || '',
+            deviceId: getOrCreateDeviceId(),
+          }
+        : {
+            verificationToken: pendingTwoFactor.verificationToken,
+            code,
+            forceTakeover: false,
+            deviceId: getOrCreateDeviceId(),
+          };
+
+      const response = await api.post('/auth/verify-2fa', payload);
 
       const { user: userData, token, role: resolvedRole } = response.data.data || {};
       if (!token || !userData) {

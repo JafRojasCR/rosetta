@@ -29,6 +29,7 @@ const TwoFactorPage = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [sessionConflict, setSessionConflict] = useState(null);
+  const [sessionConflictError, setSessionConflictError] = useState('');
   const inputs = useRef([]);
 
   useEffect(() => {
@@ -106,6 +107,7 @@ const TwoFactorPage = () => {
       const result = await verifyTwoFactor(finalCode);
       if (result?.requiresSessionTakeover) {
         setSessionConflict(result);
+        setSessionConflictError('');
         return;
       }
 
@@ -120,19 +122,23 @@ const TwoFactorPage = () => {
 
   const handleCancelSessionTakeover = () => {
     setSessionConflict(null);
-    setError('Inicio de sesión cancelado por sesión activa en otro dispositivo.');
+    setSessionConflictError('');
+    setError('');
+    setSuccess('');
+    navigate('/login', { replace: true });
   };
 
   const handleConfirmSessionTakeover = async () => {
     if (!sessionConflict?.takeoverToken) {
       setSessionConflict(null);
-      setError('No se pudo validar el traspaso de sesión. Inicia sesión de nuevo.');
+      setSessionConflictError('No se pudo validar el traspaso de sesión. Inicia sesión de nuevo.');
       return;
     }
 
     setIsTakingOverSession(true);
     setError('');
     setSuccess('');
+    setSessionConflictError('');
 
     try {
       const result = await verifyTwoFactor('', {
@@ -142,6 +148,7 @@ const TwoFactorPage = () => {
 
       if (result?.requiresSessionTakeover) {
         setSessionConflict(result);
+        setSessionConflictError('Aún existe un conflicto de sesión. Intenta nuevamente.');
         return;
       }
 
@@ -149,7 +156,9 @@ const TwoFactorPage = () => {
       setSuccess('Sesión trasladada correctamente a este dispositivo.');
       setIsSuccess(true);
     } catch (requestError) {
-      setError(requestError.response?.data?.message || 'No se pudo trasladar la sesión.');
+      setSessionConflictError(
+        requestError.response?.data?.message || 'No se pudo trasladar la sesión.'
+      );
     } finally {
       setIsTakingOverSession(false);
     }
@@ -200,6 +209,12 @@ const TwoFactorPage = () => {
                 {sessionConflict.activeSession?.userAgent || 'Dispositivo no identificado'}
               </p>
             </div>
+
+            {sessionConflictError && (
+              <div className="mb-4 bg-red-50 border border-red-200 text-red-700 rounded-2xl p-3 text-sm font-semibold">
+                {sessionConflictError}
+              </div>
+            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <button
