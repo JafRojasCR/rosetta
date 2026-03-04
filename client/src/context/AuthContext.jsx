@@ -157,17 +157,7 @@ export const AuthProvider = ({ children }) => {
   const register = async (data) => {
     const response = await api.post('/auth/register', data);
     const responseData = response.data.data || {};
-    const userData = responseData.user || responseData.student;
-    const token = responseData.token;
-    const resolvedRole = responseData.role || 'student';
-
-    localStorage.setItem('token', token);
-    localStorage.setItem('user', JSON.stringify(userData));
-    localStorage.setItem('role', resolvedRole);
-
-    setUser(userData);
-    setRole(resolvedRole);
-    return userData;
+    return responseData.user || responseData.student || responseData;
   };
 
   const logout = () => {

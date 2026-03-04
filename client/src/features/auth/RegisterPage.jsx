@@ -67,7 +67,7 @@ const RegisterPage = () => {
     try {
       await register(form);
       setIsSuccess(true);
-      setTimeout(() => navigate('/dashboard'), 1800);
+      setTimeout(() => navigate('/login'), 1800);
     } catch (err) {
       const message = err.response?.data?.message || 'Error al registrarse';
       setError(true);
@@ -251,7 +251,7 @@ const RegisterPage = () => {
         <div className="fixed inset-0 flex flex-col items-center justify-center animate-in fade-in duration-700 bg-black/40">
           <div className="bg-white p-12 rounded-[2.5rem] shadow-2xl text-center animate-in zoom-in-75 slide-in-from-bottom-8 duration-700">
             <h1 className="text-3xl font-bold text-gray-800 tracking-tight">¡Cuenta creada!</h1>
-            <p className="text-gray-400 mt-3 text-lg font-light">Redirigiendo a tu panel...</p>
+            <p className="text-gray-400 mt-3 text-lg font-light">Redirigiendo a iniciar sesión...</p>
           </div>
         </div>
       )}
