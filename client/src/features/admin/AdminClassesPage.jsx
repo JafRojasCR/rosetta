@@ -108,6 +108,18 @@ const AdminClassesPage = () => {
     return response.data.data || [];
   };
 
+  const loadClassCodesBySlot = async ({ date, subjectId }) => {
+    const response = await api.get('/classes', {
+      params: {
+        date,
+        subjectId,
+        fields: 'minimal',
+      },
+    });
+
+    return response.data.data || [];
+  };
+
   const fetchInitialData = async () => {
     setLoading(true);
     setError('');
@@ -193,7 +205,7 @@ const AdminClassesPage = () => {
     }
 
     try {
-      const classesForSlot = await loadClasses({ date, subjectId });
+      const classesForSlot = await loadClassCodesBySlot({ date, subjectId });
       const filtered = (classesForSlot || []).filter(
         (cls) => cls.classCode !== excludeClassCode
       );

@@ -407,7 +407,7 @@ const voteSchema = Joi.object({
 // GET /api/classes
 const getClasses = async (req, res) => {
   try {
-    const { subjectId, isPublic, date } = req.query;
+    const { subjectId, isPublic, date, fields } = req.query;
     const filter = {};
     if (subjectId) filter['subject.subjectId'] = subjectId;
     if (isPublic !== undefined) filter.isPublic = isPublic === 'true';
@@ -426,7 +426,26 @@ const getClasses = async (req, res) => {
       filter.date = { $gte: startOfDay, $lte: endOfDay };
     }
 
-    const classes = await Class.find(filter).sort({ date: -1 });
+    const projection =
+      fields === 'minimal'
+        ? { classCode: 1, date: 1, 'subject.subjectId': 1 }
+        : {
+            classCode: 1,
+            title: 1,
+            description: 1,
+            date: 1,
+            isPublic: 1,
+            price: 1,
+            recordingUrl: 1,
+            canvaUrl: 1,
+            subject: 1,
+            adminEmail: 1,
+            classStudents: 1,
+            createdAt: 1,
+            updatedAt: 1,
+          };
+
+    const classes = await Class.find(filter).select(projection).sort({ date: -1 }).lean();
     return success(res, classes);
   } catch (err) {
     return error(res, err.message);

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { CheckCircle2, ChevronDown } from 'lucide-react';
 
 const CustomSelectMenu = ({
@@ -12,7 +13,23 @@ const CustomSelectMenu = ({
   menuClassName = '',
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [isMenuEntered, setIsMenuEntered] = useState(false);
   const wrapperRef = useRef(null);
+  const menuRef = useRef(null);
+  const [menuPosition, setMenuPosition] = useState(null);
+
+  const updateMenuPosition = () => {
+    const triggerRect = wrapperRef.current?.getBoundingClientRect();
+    if (!triggerRect) return false;
+
+    setMenuPosition({
+      top: triggerRect.bottom + 8,
+      left: triggerRect.left,
+      width: triggerRect.width,
+    });
+
+    return true;
+  };
 
   const selectedOption = useMemo(
     () => (options || []).find((option) => option.value === value) || null,
@@ -21,7 +38,10 @@ const CustomSelectMenu = ({
 
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
+      const clickedInsideWrapper = wrapperRef.current?.contains(event.target);
+      const clickedInsideMenu = menuRef.current?.contains(event.target);
+
+      if (!clickedInsideWrapper && !clickedInsideMenu) {
         setIsOpen(false);
       }
     };
@@ -29,6 +49,25 @@ const CustomSelectMenu = ({
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  useLayoutEffect(() => {
+    if (!isOpen) return undefined;
+
+    updateMenuPosition();
+    window.addEventListener('resize', updateMenuPosition);
+    window.addEventListener('scroll', updateMenuPosition, true);
+
+    setIsMenuEntered(false);
+    const animationFrame = requestAnimationFrame(() => {
+      setIsMenuEntered(true);
+    });
+
+    return () => {
+      cancelAnimationFrame(animationFrame);
+      window.removeEventListener('resize', updateMenuPosition);
+      window.removeEventListener('scroll', updateMenuPosition, true);
+    };
+  }, [isOpen]);
 
   const hasOptions = Array.isArray(options) && options.length > 0;
 
@@ -38,7 +77,16 @@ const CustomSelectMenu = ({
         type="button"
         onClick={() => {
           if (!disabled && hasOptions) {
-            setIsOpen((prev) => !prev);
+            if (isOpen) {
+              setIsOpen(false);
+              return;
+            }
+
+            setIsMenuEntered(false);
+            const hasPosition = updateMenuPosition();
+            if (hasPosition) {
+              setIsOpen(true);
+            }
           }
         }}
         className={`w-full flex items-center justify-between bg-gray-50 border-2 rounded-2xl px-5 py-3.5 transition-all duration-300 ${
@@ -46,7 +94,11 @@ const CustomSelectMenu = ({
         } ${disabled ? 'opacity-60 cursor-not-allowed' : ''} ${buttonClassName}`}
         disabled={disabled}
       >
-        <span className={`font-semibold text-left truncate ${selectedOption ? 'text-gray-800' : 'text-gray-400'}`}>
+        <span
+          className={`text-sm font-semibold text-left truncate ${
+            selectedOption ? 'text-gray-800' : 'text-gray-400'
+          }`}
+        >
           {selectedOption?.label || placeholder}
         </span>
         <ChevronDown
@@ -55,41 +107,53 @@ const CustomSelectMenu = ({
         />
       </button>
 
-      {isOpen && (
-        <div
-          className={`absolute top-full left-0 right-0 mt-2 bg-white rounded-3xl shadow-2xl border border-gray-100 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${menuClassName}`}
-        >
-          <div className="max-h-60 overflow-y-auto py-2">
-            {!hasOptions ? (
-              <p className="px-6 py-4 text-sm font-semibold text-gray-400">{emptyMessage}</p>
-            ) : (
-              options.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => {
-                    onChange(option.value);
-                    setIsOpen(false);
-                  }}
-                  className={`w-full px-6 py-4 hover:bg-blue-50 transition-colors flex items-center justify-between text-left ${
-                    value === option.value ? 'bg-blue-50/50' : ''
-                  }`}
-                >
-                  <div>
-                    <p className="font-black text-gray-900 text-sm">{option.label}</p>
-                    {option.description ? (
-                      <p className="text-xs font-bold text-gray-400 mt-0.5 uppercase tracking-tighter">
-                        {option.description}
-                      </p>
-                    ) : null}
-                  </div>
-                  {value === option.value ? <CheckCircle2 size={18} className="text-blue-500" /> : null}
-                </button>
-              ))
-            )}
-          </div>
-        </div>
-      )}
+      {isOpen && menuPosition
+        ? createPortal(
+            <div
+              ref={menuRef}
+              style={{
+                position: 'fixed',
+                top: `${menuPosition.top}px`,
+                left: `${menuPosition.left}px`,
+                width: `${menuPosition.width}px`,
+              }}
+              className={`font-['Poppins'] bg-white rounded-3xl shadow-2xl border border-gray-100 z-[9999] overflow-hidden origin-top transition-all duration-200 ease-out ${
+                isMenuEntered ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-1'
+              } ${menuClassName}`}
+            >
+              <div className="max-h-52 overflow-y-auto py-2 [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded-full">
+                {!hasOptions ? (
+                  <p className="px-6 py-4 text-sm font-medium text-gray-400">{emptyMessage}</p>
+                ) : (
+                  options.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => {
+                        onChange(option.value);
+                        setIsOpen(false);
+                      }}
+                      className={`w-full px-6 py-4 hover:bg-blue-50 transition-colors flex items-center justify-between text-left ${
+                        value === option.value ? 'bg-blue-50/50' : ''
+                      }`}
+                    >
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900">{option.label}</p>
+                        {option.description ? (
+                          <p className="text-[11px] font-medium text-gray-400 mt-0.5 uppercase tracking-tight">
+                            {option.description}
+                          </p>
+                        ) : null}
+                      </div>
+                      {value === option.value ? <CheckCircle2 size={18} className="text-blue-500" /> : null}
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
     </div>
   );
 };

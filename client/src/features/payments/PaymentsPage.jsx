@@ -21,6 +21,7 @@ import {
 import api from '../../services/api';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import useAuth from '../../hooks/useAuth';
+import CustomSelectMenu from '../../components/CustomSelectMenu';
 
 const statusColors = {
   pendiente: 'bg-amber-50 text-amber-700 border-amber-100',
@@ -79,7 +80,6 @@ const PaymentsPage = () => {
   const [isVisible, setIsVisible] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [selectedClassCode, setSelectedClassCode] = useState('');
   const [uploadedFile, setUploadedFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState('');
@@ -93,7 +93,6 @@ const PaymentsPage = () => {
   const [error, setError] = useState('');
   const [lastChecks, setLastChecks] = useState(null);
   const [cancelingPaymentId, setCancelingPaymentId] = useState('');
-  const dropdownRef = useRef(null);
   const fileInputRef = useRef(null);
 
   const userEmail = String(user?.email || '').toLowerCase();
@@ -137,8 +136,25 @@ const PaymentsPage = () => {
         code: cls.classCode,
         subject: cls.subject?.name || 'Sin materia',
         description: cls.description || 'Sin descripción',
+        tutoredStudentName: (() => {
+          const tutoredEntry = (cls.classStudents || []).find((entry) => entry?.type === 'tutored');
+          if (!tutoredEntry) return '';
+          return `${tutoredEntry?.student?.name || ''} ${tutoredEntry?.student?.lastName || ''}`.trim();
+        })(),
       }));
   }, [classes, userEmail, blockedClassCodes]);
+
+  const availableClassOptions = useMemo(
+    () =>
+      availableClassesToPay.map((item) => ({
+        value: item.code,
+        label: `${item.name} • ${item.subject}`,
+        description: item.tutoredStudentName
+          ? `Tutoría para: ${item.tutoredStudentName}`
+          : `Código: ${item.code}`,
+      })),
+    [availableClassesToPay]
+  );
 
   const selectedClassData = useMemo(
     () => availableClassesToPay.find((item) => item.code === selectedClassCode) || null,
@@ -179,16 +195,7 @@ const PaymentsPage = () => {
 
     fetchPayments();
 
-    const handleClickOutside = (event) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setIsDropdownOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
       if (previewUrl) {
         URL.revokeObjectURL(previewUrl);
       }
@@ -416,70 +423,32 @@ const PaymentsPage = () => {
               </div>
 
               <div className="flex flex-col h-full space-y-8 py-2">
-                <div className="space-y-3 relative" ref={dropdownRef}>
+                <div className="space-y-3 relative">
                   <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">
                     Clase a pagar
                   </label>
-                  <button
-                    type="button"
-                    onClick={() => setIsDropdownOpen((prev) => !prev)}
-                    className={`w-full flex items-center justify-between bg-gray-50 border-2 rounded-2xl px-6 py-4 transition-all duration-300 ${
-                      isDropdownOpen ? 'border-blue-500 bg-white shadow-lg' : 'border-transparent'
-                    }`}
+                  <CustomSelectMenu
+                    value={selectedClassCode}
+                    onChange={(nextValue) => {
+                      setSelectedClassCode(nextValue);
+                      setError('');
+                    }}
+                    options={availableClassOptions}
+                    placeholder={
+                      availableClassesToPay.length === 0
+                        ? 'No hay clases disponibles para pagar'
+                        : 'Seleccionar clase'
+                    }
                     disabled={availableClassesToPay.length === 0}
-                  >
-                    <span className={`font-bold text-left ${selectedClassData ? 'text-gray-800' : 'text-gray-400'}`}>
-                      {selectedClassData
-                        ? `${selectedClassData.name} - ${selectedClassData.subject}`
-                        : availableClassesToPay.length === 0
-                          ? 'No hay clases disponibles para pagar'
-                          : 'Seleccionar clase'}
-                    </span>
-                    <ChevronDown
-                      className={`text-gray-400 transition-transform duration-300 ${
-                        isDropdownOpen ? 'rotate-180 text-blue-500' : ''
-                      }`}
-                      size={20}
-                    />
-                  </button>
+                    buttonClassName="px-6 py-4"
+                  />
 
-                  {isDropdownOpen && availableClassesToPay.length > 0 && (
-                    <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-3xl shadow-2xl border border-gray-100 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-                      <div className="max-h-60 overflow-y-auto py-2">
-                        {availableClassesToPay.map((item) => (
-                          <button
-                            key={item.code}
-                            type="button"
-                            onClick={() => {
-                              setSelectedClassCode(item.code);
-                              setIsDropdownOpen(false);
-                              setError('');
-                            }}
-                            className={`w-full px-6 py-4 hover:bg-blue-50 transition-colors flex items-center justify-between text-left ${
-                              selectedClassCode === item.code ? 'bg-blue-50/50' : ''
-                            }`}
-                          >
-                            <div>
-                              <p className="font-black text-gray-900 text-sm">{item.name} • {item.subject}</p>
-                              <p className="text-xs font-bold text-gray-400 mt-0.5 uppercase tracking-tighter">
-                                Código: {item.code}
-                              </p>
-                            </div>
-                            {selectedClassCode === item.code ? (
-                              <CheckCircle2 size={18} className="text-blue-500" />
-                            ) : null}
-                          </button>
-                        ))}
-                      </div>
-
-                      {rejectedClassCodes.size > 0 ? (
-                        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-xs sm:text-sm font-semibold text-red-700 flex items-start gap-2">
-                          <ShieldAlert size={16} className="mt-0.5 shrink-0" />
-                          Tienes pagos rechazados en {rejectedClassCodes.size} clase(s). Debes eliminar ese pago rechazado en el historial antes de volver a pagar esa clase.
-                        </div>
-                      ) : null}
+                  {rejectedClassCodes.size > 0 ? (
+                    <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-xs sm:text-sm font-semibold text-red-700 flex items-start gap-2">
+                      <ShieldAlert size={16} className="mt-0.5 shrink-0" />
+                      Tienes pagos rechazados en {rejectedClassCodes.size} clase(s). Debes eliminar ese pago rechazado en el historial antes de volver a pagar esa clase.
                     </div>
-                  )}
+                  ) : null}
                 </div>
 
                 <div
@@ -488,7 +457,10 @@ const PaymentsPage = () => {
                   }`}
                 >
                   {selectedClassData ? (
-                    <div className="bg-blue-50/50 rounded-[2.5rem] p-8 border border-blue-100 shadow-sm relative overflow-hidden group">
+                    <div
+                      key={selectedClassData.code}
+                      className="bg-blue-50/50 rounded-[2.5rem] p-8 border border-blue-100 shadow-sm relative overflow-hidden group animate-[classInfoSwap_280ms_ease-out]"
+                    >
                       <div className="absolute -right-6 -bottom-6 text-blue-500 opacity-5 group-hover:rotate-12 transition-transform duration-1000">
                         <BookOpen size={120} />
                       </div>
@@ -537,6 +509,17 @@ const PaymentsPage = () => {
                                 {selectedClassData.code}
                               </div>
                             </div>
+                            {selectedClassData.tutoredStudentName ? (
+                              <div className="bg-white/60 p-3 rounded-2xl border border-blue-100/50 sm:col-span-2">
+                                <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-1">
+                                  Tutoría para
+                                </span>
+                                <div className="flex items-center gap-2 text-gray-800 font-bold text-xs">
+                                  <UserIcon size={14} className="text-blue-500" />
+                                  {selectedClassData.tutoredStudentName}
+                                </div>
+                              </div>
+                            ) : null}
                           </div>
                         </div>
 
@@ -725,6 +708,23 @@ const PaymentsPage = () => {
                                 {item.recipient || 'No detectado'}
                               </p>
                             </div>
+                            {(classData?.classStudents || []).some((entry) => entry?.type === 'tutored') ? (
+                              <div className="bg-gray-50/60 p-3 rounded-xl border border-gray-100 sm:col-span-2">
+                                <span className="text-[10px] font-black text-gray-400 uppercase tracking-tight block mb-1">
+                                  Tutoría para
+                                </span>
+                                <p className="text-gray-700 flex items-center gap-1.5">
+                                  <UserIcon size={11} className="text-blue-500" />
+                                  {(() => {
+                                    const tutoredEntry = (classData?.classStudents || []).find(
+                                      (entry) => entry?.type === 'tutored'
+                                    );
+                                    const tutoredName = `${tutoredEntry?.student?.name || ''} ${tutoredEntry?.student?.lastName || ''}`.trim();
+                                    return tutoredName || 'Estudiante asignado';
+                                  })()}
+                                </p>
+                              </div>
+                            ) : null}
                           </div>
 
                           {item.validationChecks ? (
@@ -855,6 +855,10 @@ const PaymentsPage = () => {
         @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
         @keyframes zoom-in-95 { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
         @keyframes slide-in-top { from { transform: translateY(-0.5rem); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes classInfoSwap {
+          0% { opacity: 0; transform: translateY(8px) scale(0.995); }
+          100% { opacity: 1; transform: translateY(0) scale(1); }
+        }
       `,
         }}
       />
