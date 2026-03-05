@@ -52,17 +52,7 @@ const uploadLimiter = rateLimit({
   },
 });
 
-// Stricter rate limit for auth endpoints
-const authLimiter = rateLimit({
-  windowMs: 1 * 60 * 1000,
-  max: 20,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { success: false, message: 'Demasiados intentos de autenticación. Intenta de nuevo en 1 minuto.' },
-});
-
 app.use('/api', limiter);
-app.use('/api/auth', authLimiter);
 app.use('/api/classes/recording-upload', uploadLimiter);
 app.use('/api/documents/upload', uploadLimiter);
 
