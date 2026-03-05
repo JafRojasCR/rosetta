@@ -33,6 +33,7 @@ const limiter = rateLimit({
   skip: (req) => {
     const url = String(req.originalUrl || '');
     return (
+      url.startsWith('/api/auth/') ||
       url.startsWith('/api/classes/recording-upload/') ||
       url.startsWith('/api/documents/upload/')
     );

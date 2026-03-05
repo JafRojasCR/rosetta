@@ -822,7 +822,7 @@ const AdminClassesPage = () => {
                     </button>
 
                     {isDatePickerOpen && (
-                      <div className="absolute left-0 top-full mt-2 w-[20rem] sm:w-[22rem] max-w-[calc(100vw-2rem)] bg-white border border-gray-200 rounded-2xl shadow-xl p-4 z-30">
+                      <div className="absolute left-1/2 -translate-x-1/2 sm:left-0 sm:translate-x-0 top-full mt-2 w-[20rem] sm:w-[22rem] max-w-[calc(100vw-2rem)] bg-white border border-gray-200 rounded-2xl shadow-xl p-4 z-30">
                         <div className="flex items-center justify-between mb-3">
                           <button
                             type="button"
