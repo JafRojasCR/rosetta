@@ -3,7 +3,12 @@ const { success, error } = require('../utils/apiResponse');
 const Joi = require('joi');
 const jwt = require('jsonwebtoken');
 const path = require('path');
-const { jwtSecret, uploadDir } = require('../config/env');
+const {
+  jwtSecret,
+  uploadDir,
+  documentUploadChunkSizeMb,
+  documentUploadMaxFileSizeMb,
+} = require('../config/env');
 const {
   getDriveClient,
   uploadFileToGoogleDrive,
@@ -14,8 +19,8 @@ const {
   removeTempFile,
 } = require('../services/googleDriveService');
 
-const MAX_DOCUMENT_UPLOAD_CHUNK_BYTES =
-  process.env.VERCEL ? 4 * 1024 * 1024 : 32 * 1024 * 1024;
+const MAX_DOCUMENT_UPLOAD_CHUNK_BYTES = documentUploadChunkSizeMb * 1024 * 1024;
+const MAX_DOCUMENT_UPLOAD_SIZE_BYTES = documentUploadMaxFileSizeMb * 1024 * 1024;
 
 const documentUploadInitSchema = Joi.object({
   fileName: Joi.string().trim().min(1).required(),
@@ -103,8 +108,10 @@ const buildSecureVideoPlayerHtml = (streamUrl) => `<!doctype html>
       const toTime = (seconds) => {
         if (!Number.isFinite(seconds)) return '00:00';
         const value = Math.max(0, Math.floor(seconds));
-        const m = String(Math.floor(value / 60)).padStart(2, '0');
+        const h = Math.floor(value / 3600);
+        const m = String(Math.floor((value % 3600) / 60)).padStart(2, '0');
         const s = String(value % 60).padStart(2, '0');
+        if (h > 0) return h + ':' + m + ':' + s;
         return m + ':' + s;
       };
 
@@ -374,6 +381,14 @@ const createDocument = async (req, res) => {
 const initDocumentUpload = async (req, res) => {
   const { error: validationError, value } = documentUploadInitSchema.validate(req.body || {});
   if (validationError) return error(res, validationError.details[0].message, 400);
+
+  if (value.fileSize > MAX_DOCUMENT_UPLOAD_SIZE_BYTES) {
+    return error(
+      res,
+      `El archivo supera el limite permitido de ${documentUploadMaxFileSizeMb} MB para recursos.`,
+      400
+    );
+  }
 
   try {
     const session = await createResumableUploadSession({

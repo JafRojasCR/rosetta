@@ -19,6 +19,20 @@ const VERIFICATION_EXPIRY_MS = 10 * 60 * 1000;
 const MAX_OTP_ATTEMPTS = 5;
 const OTP_LOCK_MS = 30 * 1000;
 
+const purgeObsoleteVerificationRecords = async () => {
+  await AuthVerificationToken.deleteMany({
+    $or: [{ expiresAt: { $lte: new Date() } }, { consumedAt: { $ne: null } }],
+  });
+};
+
+const revokeVerificationRecordsForUser = async ({ email, userId, purpose }) => {
+  await AuthVerificationToken.deleteMany({
+    email: String(email || '').toLowerCase(),
+    userId,
+    purpose,
+  });
+};
+
 const normalizeDeviceId = (value = '') => String(value || '').trim().slice(0, 120);
 
 const getClientIp = (req) => {
@@ -57,6 +71,13 @@ const findAccountByEmail = async (email) => {
 };
 
 const createVerificationRecord = async ({ account, role, purpose }) => {
+  await purgeObsoleteVerificationRecords();
+  await revokeVerificationRecordsForUser({
+    email: account.email,
+    userId: account._id,
+    purpose,
+  });
+
   const code = generateCode();
   const verificationToken = crypto.randomBytes(32).toString('hex');
   const expiresAt = new Date(Date.now() + VERIFICATION_EXPIRY_MS);
@@ -113,6 +134,7 @@ const validateVerificationCode = async (record, code) => {
   }
 
   if (record.expiresAt.getTime() < Date.now()) {
+    await AuthVerificationToken.deleteOne({ _id: record._id });
     return { ok: false, message: 'Código expirado. Solicita un nuevo código.' };
   }
 
@@ -144,10 +166,7 @@ const validateVerificationCode = async (record, code) => {
     return { ok: false, message: 'Código inválido o expirado.' };
   }
 
-  await AuthVerificationToken.updateOne(
-    { _id: record._id },
-    { $set: { consumedAt: new Date(), lockedUntil: null, attempts: 0 } }
-  );
+  await AuthVerificationToken.deleteOne({ _id: record._id });
   return { ok: true };
 };
 
@@ -241,10 +260,13 @@ const resend2FA = async (req, res) => {
   if (validationError) return error(res, validationError.details[0].message, 400);
 
   try {
+    await purgeObsoleteVerificationRecords();
+
     const record = await findRecordByToken(value.verificationToken, 'login_2fa');
     if (!record) return error(res, 'Solicitud de verificación no válida.', 400);
 
     if (record.expiresAt.getTime() < Date.now()) {
+      await AuthVerificationToken.deleteOne({ _id: record._id });
       return error(res, 'La solicitud expiró. Inicia sesión nuevamente.', 400);
     }
 
@@ -277,6 +299,8 @@ const verify2FA = async (req, res) => {
   if (validationError) return error(res, validationError.details[0].message, 400);
 
   try {
+    await purgeObsoleteVerificationRecords();
+
     const requestedDeviceId = normalizeDeviceId(value.deviceId || req.headers['x-device-id'] || '');
 
     let user;

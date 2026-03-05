@@ -20,6 +20,22 @@ const classUploadMaxFileSizeMb = Number.isFinite(parsedClassUploadMaxMb) && pars
   ? parsedClassUploadMaxMb
   : 2048;
 
+const parsedDocumentUploadMaxMb = Number(process.env.DOCUMENT_UPLOAD_MAX_FILE_SIZE_MB);
+const documentUploadMaxFileSizeMb =
+  Number.isFinite(parsedDocumentUploadMaxMb) && parsedDocumentUploadMaxMb > 0
+    ? parsedDocumentUploadMaxMb
+    : 2048;
+
+const parsedDocumentUploadChunkSizeMb = Number(process.env.DOCUMENT_UPLOAD_CHUNK_SIZE_MB);
+const defaultDocumentChunkSizeMb = isVercel ? 4 : 32;
+const normalizedDocumentChunkSizeMb =
+  Number.isFinite(parsedDocumentUploadChunkSizeMb) && parsedDocumentUploadChunkSizeMb > 0
+    ? Math.floor(parsedDocumentUploadChunkSizeMb)
+    : defaultDocumentChunkSizeMb;
+const documentUploadChunkSizeMb = isVercel
+  ? Math.min(normalizedDocumentChunkSizeMb, 4)
+  : normalizedDocumentChunkSizeMb;
+
 module.exports = {
   port: process.env.PORT || 3000,
   mongodbUri: process.env.MONGODB_URI || 'mongodb://localhost:27017/rosetta',
@@ -39,6 +55,8 @@ module.exports = {
   emailRefreshToken: process.env.EMAIL_REFRESH_TOKEN || '',
   uploadDir,
   classUploadMaxFileSizeMb,
+  documentUploadMaxFileSizeMb,
+  documentUploadChunkSizeMb,
   isVercel,
   googleDriveEnabled:
     process.env.GOOGLE_DRIVE_ENABLED === '1' || process.env.GOOGLE_DRIVE_ENABLED === 'true',

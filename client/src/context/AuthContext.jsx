@@ -1,9 +1,11 @@
-import { createContext, useState, useEffect } from 'react';
+import { createContext, useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 
 export const AuthContext = createContext(null);
 const PENDING_2FA_KEY = 'pending2fa';
 const DEVICE_ID_KEY = 'rosettaDeviceId';
+const SESSION_CHECK_INTERVAL_MS = 30 * 1000;
 
 const createDeviceId = () => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -25,10 +27,43 @@ const getOrCreateDeviceId = () => {
 };
 
 export const AuthProvider = ({ children }) => {
+  const navigate = useNavigate();
   const [user, setUser] = useState(null);
   const [role, setRole] = useState(null);
   const [pendingTwoFactor, setPendingTwoFactor] = useState(null);
   const [loading, setLoading] = useState(true);
+  const sessionCheckInFlightRef = useRef(false);
+
+  const clearAuthState = useCallback(() => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    localStorage.removeItem('role');
+    sessionStorage.removeItem(PENDING_2FA_KEY);
+    setUser(null);
+    setRole(null);
+    setPendingTwoFactor(null);
+  }, []);
+
+  const forceLogoutBySessionState = useCallback(
+    (reason = '') => {
+      clearAuthState();
+      navigate(`/login${reason ? `?reason=${reason}` : ''}`, { replace: true });
+    },
+    [clearAuthState, navigate]
+  );
+
+  useEffect(() => {
+    const handleAuthRedirect = (event) => {
+      const nextPath = String(event?.detail?.path || '/login');
+      clearAuthState();
+      navigate(nextPath, { replace: true });
+    };
+
+    window.addEventListener('rosetta:auth-redirect', handleAuthRedirect);
+    return () => {
+      window.removeEventListener('rosetta:auth-redirect', handleAuthRedirect);
+    };
+  }, [clearAuthState, navigate]);
 
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
@@ -51,6 +86,59 @@ export const AuthProvider = ({ children }) => {
 
     setLoading(false);
   }, []);
+
+  const checkSessionHealth = useCallback(async () => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    if (sessionCheckInFlightRef.current) return;
+
+    sessionCheckInFlightRef.current = true;
+    try {
+      const response = await api.get('/auth/me', { skipAuthRedirect: true });
+      const payload = response.data?.data || {};
+      const freshUser = payload.user;
+      const freshRole = payload.role;
+
+      if (freshUser) {
+        localStorage.setItem('user', JSON.stringify(freshUser));
+        setUser(freshUser);
+      }
+
+      if (freshRole) {
+        localStorage.setItem('role', freshRole);
+        setRole(freshRole);
+      }
+    } catch (requestError) {
+      if (requestError.response?.status === 401) {
+        const code =
+          requestError.response?.data?.errors?.code || requestError.response?.data?.details?.code;
+        const reason = code === 'SESSION_REVOKED' ? 'session-revoked' : 'session-expired';
+        forceLogoutBySessionState(reason);
+      }
+    } finally {
+      sessionCheckInFlightRef.current = false;
+    }
+  }, [forceLogoutBySessionState]);
+
+  useEffect(() => {
+    if (loading || !user) return undefined;
+    if (!localStorage.getItem('token')) return undefined;
+
+    checkSessionHealth();
+
+    const intervalId = setInterval(checkSessionHealth, SESSION_CHECK_INTERVAL_MS);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        checkSessionHealth();
+      }
+    };
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [loading, user, checkSessionHealth]);
 
   const login = async (email, password) => {
     const response = await api.post('/auth/login', { email, password });
@@ -162,18 +250,12 @@ export const AuthProvider = ({ children }) => {
 
   const logout = () => {
     if (localStorage.getItem('token')) {
-      api.post('/auth/logout').catch(() => {
+      api.post('/auth/logout', null, { skipAuthRedirect: true }).catch(() => {
         // no-op: local cleanup still proceeds
       });
     }
 
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    localStorage.removeItem('role');
-    sessionStorage.removeItem(PENDING_2FA_KEY);
-    setUser(null);
-    setRole(null);
-    setPendingTwoFactor(null);
+    clearAuthState();
   };
 
   const updateUser = (updatedUser) => {

@@ -23,6 +23,7 @@ const AdminDocumentsPage = () => {
   const [deletingDocId, setDeletingDocId] = useState('');
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   useEffect(() => {
     const id = requestAnimationFrame(() => setIsVisible(true));
@@ -82,6 +83,7 @@ const AdminDocumentsPage = () => {
     }
 
     setLoading(true);
+    setUploadProgress(0);
     try {
       const initResponse = await api.post('/documents/upload/init', {
         fileName: file.name,
@@ -123,6 +125,9 @@ const AdminDocumentsPage = () => {
         }
 
         offset = endExclusive;
+        const uploadRatio = offset / file.size;
+        const progress = Math.min(90, Math.round(uploadRatio * 90));
+        setUploadProgress((prev) => Math.max(prev, progress));
       }
 
       if (!uploadedFileId) {
@@ -132,6 +137,7 @@ const AdminDocumentsPage = () => {
       const completeResponse = await api.post('/documents/upload/complete', {
         fileId: uploadedFileId,
       });
+      setUploadProgress((prev) => Math.max(prev, 95));
 
       const uploadedFileUrl = completeResponse.data?.data?.fileUrl || '';
       if (!uploadedFileUrl) {
@@ -150,6 +156,8 @@ const AdminDocumentsPage = () => {
         mimeType: file.type || 'application/octet-stream',
       });
 
+      setUploadProgress(100);
+
       setSuccess('Recurso cargado correctamente.');
       setForm({ title: '', description: '', subjectId: '' });
       setFile(null);
@@ -158,6 +166,7 @@ const AdminDocumentsPage = () => {
       setError(err.response?.data?.message || 'Error al cargar el recurso.');
     } finally {
       setLoading(false);
+      setTimeout(() => setUploadProgress(0), 700);
     }
   };
 
@@ -314,6 +323,23 @@ const AdminDocumentsPage = () => {
                 {loading ? 'Subiendo...' : 'Subir recurso'}
               </button>
             </div>
+
+            {(loading || uploadProgress > 0) && (
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                    Progreso de carga
+                  </span>
+                  <span className="text-sm font-black text-blue-600">{uploadProgress}%</span>
+                </div>
+                <div className="h-3 rounded-full bg-gray-100 overflow-hidden border border-gray-200">
+                  <div
+                    className="h-full bg-gradient-to-r from-blue-500 to-blue-600 transition-all duration-500 ease-out"
+                    style={{ width: `${uploadProgress}%` }}
+                  />
+                </div>
+              </div>
+            )}
           </form>
 
           <div className="mt-10">

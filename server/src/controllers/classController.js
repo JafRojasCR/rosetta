@@ -176,8 +176,10 @@ const buildSecurePlayerHtml = (streamUrl) => `<!doctype html>
       const toTime = (seconds) => {
         if (!Number.isFinite(seconds)) return '00:00';
         const value = Math.max(0, Math.floor(seconds));
-        const m = String(Math.floor(value / 60)).padStart(2, '0');
+        const h = Math.floor(value / 3600);
+        const m = String(Math.floor((value % 3600) / 60)).padStart(2, '0');
         const s = String(value % 60).padStart(2, '0');
+        if (h > 0) return h + ':' + m + ':' + s;
         return m + ':' + s;
       };
 

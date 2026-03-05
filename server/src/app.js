@@ -54,11 +54,11 @@ const uploadLimiter = rateLimit({
 
 // Stricter rate limit for auth endpoints
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
+  windowMs: 1 * 60 * 1000,
   max: 20,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { success: false, message: 'Demasiados intentos de autenticación. Intenta de nuevo en 15 minutos.' },
+  message: { success: false, message: 'Demasiados intentos de autenticación. Intenta de nuevo en 1 minuto.' },
 });
 
 app.use('/api', limiter);

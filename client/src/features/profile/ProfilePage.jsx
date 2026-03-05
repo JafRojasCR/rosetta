@@ -131,7 +131,6 @@ const ProfilePage = () => {
     try {
       await api.delete('/admin/profile');
       logout();
-      navigate('/login');
     } catch (err) {
       setProfileError(err.response?.data?.message || 'Error al eliminar la cuenta');
     } finally {
@@ -149,7 +148,6 @@ const ProfilePage = () => {
 
   const handleLogout = () => {
     logout();
-    navigate('/login');
   };
 
   const openDeleteModal = () => {

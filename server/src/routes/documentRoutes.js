@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const documentChunkRawLimit = process.env.VERCEL ? '4mb' : '40mb';
+const { documentUploadChunkSizeMb } = require('../config/env');
+const documentChunkRawLimit = `${documentUploadChunkSizeMb}mb`;
 const {
   getDocuments,
   getDocumentById,

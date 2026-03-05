@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
   BookOpen,
   Calendar,
+  ChevronLeft,
+  ChevronRight,
   Edit3,
   FileText,
   Link as LinkIcon,
@@ -80,6 +82,45 @@ const INITIAL_FORM = {
   recordingFile: null,
 };
 
+const WEEK_DAYS = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+const MONTH_NAMES = [
+  'ene',
+  'feb',
+  'mar',
+  'abr',
+  'may',
+  'jun',
+  'jul',
+  'ago',
+  'sep',
+  'oct',
+  'nov',
+  'dic',
+];
+
+const toIsoDate = (year, month, day) => {
+  const normalizedMonth = String(month + 1).padStart(2, '0');
+  const normalizedDay = String(day).padStart(2, '0');
+  return `${year}-${normalizedMonth}-${normalizedDay}`;
+};
+
+const parseIsoDate = (value = '') => {
+  const [year, month, day] = String(value || '').split('-').map(Number);
+  if (!year || !month || !day) return null;
+  return { year, month: month - 1, day };
+};
+
+const formatReadableDate = (value = '') => {
+  if (!value) return 'Seleccionar';
+  const parsed = parseIsoDate(value);
+  if (!parsed) return 'Seleccionar';
+
+  const day = String(parsed.day).padStart(2, '0');
+  const monthShort = MONTH_NAMES[parsed.month] || '---';
+  const monthFormatted = monthShort.charAt(0).toUpperCase() + monthShort.slice(1);
+  return `${day}/${monthFormatted}/${parsed.year}`;
+};
+
 const CLASS_VIDEO_CHUNK_SIZE_BYTES = 32 * 1024 * 1024;
 
 const AdminClassesPage = () => {
@@ -97,6 +138,12 @@ const AdminClassesPage = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [editingClassCode, setEditingClassCode] = useState('');
   const [busyClassCode, setBusyClassCode] = useState('');
+  const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
+  const [calendarViewDate, setCalendarViewDate] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
+  const datePickerRef = useRef(null);
 
   useEffect(() => {
     const id = requestAnimationFrame(() => setIsVisible(true));
@@ -152,6 +199,36 @@ const AdminClassesPage = () => {
   }, []);
 
   useEffect(() => {
+    const parsed = parseIsoDate(form.date);
+    if (!parsed) return;
+    setCalendarViewDate(new Date(parsed.year, parsed.month, 1));
+  }, [form.date]);
+
+  useEffect(() => {
+    if (!isDatePickerOpen) return undefined;
+
+    const handlePointerDownOutside = (event) => {
+      if (!datePickerRef.current?.contains(event.target)) {
+        setIsDatePickerOpen(false);
+      }
+    };
+
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') {
+        setIsDatePickerOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDownOutside);
+    document.addEventListener('keydown', handleEscape);
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDownOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [isDatePickerOpen]);
+
+  useEffect(() => {
     calculateOrderByDateAndSubject({
       date: form.date,
       subjectId: form.subjectId,
@@ -193,6 +270,29 @@ const AdminClassesPage = () => {
     () => generateClassCode(form.subjectId, form.date, form.order),
     [form.subjectId, form.date, form.order]
   );
+
+  const calendarDays = useMemo(() => {
+    const year = calendarViewDate.getFullYear();
+    const month = calendarViewDate.getMonth();
+    const firstDayOfMonth = new Date(year, month, 1);
+    const jsWeekDay = firstDayOfMonth.getDay();
+    const weekDayIndex = (jsWeekDay + 6) % 7;
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+    const result = [];
+    for (let i = 0; i < weekDayIndex; i += 1) {
+      result.push({ key: `empty-${i}`, empty: true });
+    }
+
+    for (let day = 1; day <= daysInMonth; day += 1) {
+      const isoValue = toIsoDate(year, month, day);
+      result.push({ key: isoValue, empty: false, day, isoValue });
+    }
+
+    return result;
+  }, [calendarViewDate]);
+
+  const calendarTitle = `${MONTH_NAMES[calendarViewDate.getMonth()]} ${calendarViewDate.getFullYear()}`;
 
   const calculateOrderByDateAndSubject = async ({
     date,
@@ -259,6 +359,15 @@ const AdminClassesPage = () => {
       ...prev,
       tutorStudentEmail: email,
     }));
+  };
+
+  const shiftCalendarMonth = (offset) => {
+    setCalendarViewDate((prev) => new Date(prev.getFullYear(), prev.getMonth() + offset, 1));
+  };
+
+  const handlePickDate = (isoDate) => {
+    setForm((prev) => ({ ...prev, date: isoDate }));
+    setIsDatePickerOpen(false);
   };
 
   const toggleStudentUnlock = (email) => {
@@ -702,15 +811,86 @@ const AdminClassesPage = () => {
                   <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">
                     Fecha
                   </label>
-                  <div className="relative">
+                  <div className="relative" ref={datePickerRef}>
                     <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
-                    <input
-                      type="date"
-                      name="date"
-                      value={form.date}
-                      onChange={handleInputChange}
-                      className="w-full bg-gray-50 border-2 border-transparent focus:border-blue-500 rounded-2xl pl-12 pr-5 py-3.5 font-semibold text-gray-700 outline-none"
-                    />
+                    <button
+                      type="button"
+                      onClick={() => setIsDatePickerOpen((prev) => !prev)}
+                      className="w-full text-left bg-gray-50 border-2 border-transparent hover:border-blue-200 focus:border-blue-500 rounded-2xl pl-12 pr-5 py-3.5 font-semibold text-gray-700 outline-none transition-all"
+                    >
+                      {formatReadableDate(form.date)}
+                    </button>
+
+                    {isDatePickerOpen && (
+                      <div className="absolute left-0 top-full mt-2 w-[20rem] sm:w-[22rem] max-w-[calc(100vw-2rem)] bg-white border border-gray-200 rounded-2xl shadow-xl p-4 z-30">
+                        <div className="flex items-center justify-between mb-3">
+                          <button
+                            type="button"
+                            onClick={() => shiftCalendarMonth(-1)}
+                            className="w-8 h-8 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-600 flex items-center justify-center"
+                            aria-label="Mes anterior"
+                          >
+                            <ChevronLeft size={16} />
+                          </button>
+
+                          <p className="text-sm font-black text-gray-700 capitalize tracking-wide">{calendarTitle}</p>
+
+                          <button
+                            type="button"
+                            onClick={() => shiftCalendarMonth(1)}
+                            className="w-8 h-8 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-600 flex items-center justify-center"
+                            aria-label="Mes siguiente"
+                          >
+                            <ChevronRight size={16} />
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-7 gap-1 mb-2">
+                          {WEEK_DAYS.map((dayName) => (
+                            <div
+                              key={dayName}
+                              className="text-center text-[10px] font-black text-gray-400 uppercase tracking-widest"
+                            >
+                              {dayName}
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="grid grid-cols-7 gap-1">
+                          {calendarDays.map((entry) => {
+                            if (entry.empty) {
+                              return <div key={entry.key} className="h-9" />;
+                            }
+
+                            const today = new Date();
+                            const todayIso = toIsoDate(
+                              today.getFullYear(),
+                              today.getMonth(),
+                              today.getDate()
+                            );
+                            const isSelected = form.date === entry.isoValue;
+                            const isToday = todayIso === entry.isoValue;
+
+                            return (
+                              <button
+                                key={entry.key}
+                                type="button"
+                                onClick={() => handlePickDate(entry.isoValue)}
+                                className={`h-9 rounded-xl text-sm font-bold transition-all ${
+                                  isSelected
+                                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-100'
+                                    : isToday
+                                      ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                                      : 'text-gray-700 hover:bg-gray-100'
+                                }`}
+                              >
+                                {entry.day}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
