@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import api from '../../services/api';
 import LoadingSpinner from '../../components/LoadingSpinner';
+import CustomVideoPlayer from '../../components/CustomVideoPlayer';
 import useAuth from '../../hooks/useAuth';
 
 const formatDayMonth = (dateValue) => {
@@ -444,14 +445,9 @@ const ClassesPage = () => {
                             Cargando video...
                           </div>
                         ) : recordingAccessUrls[cls.classCode] ? (
-                          <video
+                          <CustomVideoPlayer
                             src={recordingAccessUrls[cls.classCode]}
-                            className="w-full h-full"
-                            controls
-                            preload="metadata"
-                            controlsList="nodownload noplaybackrate noremoteplayback"
-                            disablePictureInPicture
-                            playsInline
+                            title={`Video ${cls.displayTitle}`}
                           />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-white/90 font-bold">

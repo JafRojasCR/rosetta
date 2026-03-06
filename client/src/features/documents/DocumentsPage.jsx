@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import api from '../../services/api';
 import LoadingSpinner from '../../components/LoadingSpinner';
+import CustomVideoPlayer from '../../components/CustomVideoPlayer';
 
 const DOCUMENT_THUMB =
   'https://images.unsplash.com/photo-1544640808-32ca72ac7f37?q=80&w=600&auto=format&fit=crop';
@@ -529,16 +530,7 @@ const DocumentsPage = () => {
                 </div>
               ) : viewerUrl ? (
                 viewerType === 'video' ? (
-                  <video
-                    src={viewerUrl}
-                    title={`Video ${viewerTitle}`}
-                    className="w-full h-full"
-                    controls
-                    preload="metadata"
-                    controlsList="nodownload noplaybackrate noremoteplayback"
-                    disablePictureInPicture
-                    playsInline
-                  />
+                  <CustomVideoPlayer src={viewerUrl} title={`Video ${viewerTitle}`} />
                 ) : (
                   <object
                     data={viewerUrl}
