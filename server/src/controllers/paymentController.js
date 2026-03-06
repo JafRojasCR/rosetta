@@ -219,8 +219,6 @@ const createPayment = async (req, res) => {
       }
     }
 
-    await removeTempFile(req.file.path);
-
     const validation = validateExtractedPayment({
       extractedData,
       classCode: cls.classCode,

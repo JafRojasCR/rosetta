@@ -129,7 +129,7 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     if (loading) return undefined;
-    if (!localStorage.getItem('token')) return undefined;
+    if (!localStorage.getItem('token') || !user) return undefined;
 
     checkSessionHealth({ force: true });
 
@@ -147,7 +147,7 @@ export const AuthProvider = ({ children }) => {
       clearInterval(intervalId);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, [loading, checkSessionHealth]);
+  }, [loading, user, checkSessionHealth]);
 
   const login = async (email, password) => {
     const response = await api.post('/auth/login', { email, password });
