@@ -4,8 +4,6 @@ import { ArrowLeft, UploadCloud, FileText, Trash2 } from 'lucide-react';
 import api from '../../services/api';
 import CustomSelectMenu from '../../components/CustomSelectMenu';
 
-const DOCUMENT_UPLOAD_CHUNK_SIZE_BYTES = 32 * 1024 * 1024;
-
 const AdminDocumentsPage = () => {
   const navigate = useNavigate();
   const [isVisible, setIsVisible] = useState(false);
@@ -92,56 +90,40 @@ const AdminDocumentsPage = () => {
       });
 
       const uploadUrl = initResponse.data?.data?.uploadUrl;
-      const chunkSize = Number(initResponse.data?.data?.chunkSize) || DOCUMENT_UPLOAD_CHUNK_SIZE_BYTES;
+      const objectKey = String(initResponse.data?.data?.objectKey || '').trim();
       if (!uploadUrl) {
-        throw new Error('No se pudo iniciar la carga del recurso en Drive.');
+        throw new Error('No se pudo iniciar la carga directa del recurso en GCS.');
       }
 
-      let offset = 0;
-      let uploadedFileId = '';
-
-      while (offset < file.size) {
-        const endExclusive = Math.min(offset + chunkSize, file.size);
-        const chunk = file.slice(offset, endExclusive);
-        const chunkBuffer = await chunk.arrayBuffer();
-        const chunkStart = offset;
-        const chunkEnd = endExclusive - 1;
-
-        const uploadResponse = await api.put('/documents/upload/chunk', chunkBuffer, {
-          headers: {
-            'Content-Type': 'application/octet-stream',
-            'X-Upload-Url': uploadUrl,
-            'X-Chunk-Start': String(chunkStart),
-            'X-Chunk-End': String(chunkEnd),
-            'X-File-Size': String(file.size),
-            'X-Mime-Type': file.type || 'application/octet-stream',
-          },
-        });
-
-        const chunkData = uploadResponse.data?.data || {};
-
-        if (chunkData.done) {
-          uploadedFileId = String(chunkData.fileId || '').trim();
-        }
-
-        offset = endExclusive;
-        const uploadRatio = offset / file.size;
-        const progress = Math.min(90, Math.round(uploadRatio * 90));
-        setUploadProgress((prev) => Math.max(prev, progress));
+      if (!objectKey) {
+        throw new Error('No se obtuvo la llave del archivo en GCS.');
       }
 
-      if (!uploadedFileId) {
-        throw new Error('Google Drive no devolvió fileId al completar la carga.');
+      setUploadProgress(20);
+
+      const directUploadResponse = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': file.type || 'application/octet-stream',
+        },
+        body: file,
+      });
+
+      if (!directUploadResponse.ok) {
+        throw new Error('Falló la carga directa del recurso a GCS.');
       }
+
+      setUploadProgress(85);
 
       const completeResponse = await api.post('/documents/upload/complete', {
-        fileId: uploadedFileId,
+        objectKey,
+        mimeType: file.type || 'application/octet-stream',
       });
       setUploadProgress((prev) => Math.max(prev, 95));
 
-      const uploadedFileUrl = completeResponse.data?.data?.fileUrl || '';
-      if (!uploadedFileUrl) {
-        throw new Error('No se pudo obtener la URL pública del recurso.');
+      const uploadedObjectKey = String(completeResponse.data?.data?.objectKey || '').trim();
+      if (!uploadedObjectKey) {
+        throw new Error('No se pudo confirmar el archivo en GCS.');
       }
 
       await api.post('/documents', {
@@ -151,8 +133,8 @@ const AdminDocumentsPage = () => {
           subjectId: form.subjectId.trim(),
           name: selectedSubject.name,
         },
-        fileUrl: uploadedFileUrl,
-        driveFileId: uploadedFileId,
+        storageObjectKey: uploadedObjectKey,
+        storageProvider: 'gcs',
         mimeType: file.type || 'application/octet-stream',
       });
 

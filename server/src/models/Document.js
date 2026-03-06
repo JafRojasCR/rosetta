@@ -39,6 +39,16 @@ const documentSchema = new mongoose.Schema(
       trim: true,
       default: '',
     },
+    storageProvider: {
+      type: String,
+      enum: ['gcs', 'drive', 'local'],
+      default: 'gcs',
+    },
+    storageObjectKey: {
+      type: String,
+      trim: true,
+      default: '',
+    },
     subject: {
       subjectId: { type: String, required: true },
       name: { type: String, required: true },

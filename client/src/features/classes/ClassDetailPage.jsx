@@ -8,6 +8,7 @@ const ClassDetailPage = () => {
   const [cls, setCls] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [resourceError, setResourceError] = useState('');
 
   useEffect(() => {
     const fetchClass = async () => {
@@ -22,6 +23,19 @@ const ClassDetailPage = () => {
     };
     fetchClass();
   }, [classCode]);
+
+  const openProtectedResource = async (endpoint) => {
+    setResourceError('');
+    try {
+      const response = await api.get(endpoint);
+      const accessUrl = response.data?.data?.accessUrl || '';
+      if (accessUrl) {
+        window.open(accessUrl, '_blank', 'noopener,noreferrer');
+      }
+    } catch (_requestError) {
+      setResourceError('No se pudo abrir el recurso solicitado.');
+    }
+  };
 
   if (loading) return <LoadingSpinner />;
   if (error) return <div className="text-center py-12 text-red-500">{error}</div>;
@@ -66,27 +80,30 @@ const ClassDetailPage = () => {
 
         {cls.hasPaid || cls.isPublic ? (
           <div className="space-y-3">
+            {resourceError && (
+              <div className="bg-red-50 border border-red-100 text-red-700 text-sm font-medium rounded-lg px-4 py-2">
+                {resourceError}
+              </div>
+            )}
             {cls.recordingUrl && (
-              <a
-                href={cls.recordingUrl}
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                type="button"
+                onClick={() => openProtectedResource(`/classes/${cls.classCode}/recording-access`)}
                 className="flex items-center gap-2 bg-primary-50 text-primary-700 px-4 py-3 rounded-lg hover:bg-primary-100 transition-colors font-medium"
               >
                 <span>🎬</span>
                 <span>Ver grabación</span>
-              </a>
+              </button>
             )}
             {cls.canvaUrl && (
-              <a
-                href={cls.canvaUrl}
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                type="button"
+                onClick={() => openProtectedResource(`/classes/${cls.classCode}/canva-access`)}
                 className="flex items-center gap-2 bg-purple-50 text-purple-700 px-4 py-3 rounded-lg hover:bg-purple-100 transition-colors font-medium"
               >
                 <span>🎨</span>
                 <span>Ver presentación en Canva</span>
-              </a>
+              </button>
             )}
           </div>
         ) : (

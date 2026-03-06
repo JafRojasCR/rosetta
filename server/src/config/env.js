@@ -36,6 +36,20 @@ const documentUploadChunkSizeMb = isVercel
   ? Math.min(normalizedDocumentChunkSizeMb, 4)
   : normalizedDocumentChunkSizeMb;
 
+const parsedStorageSignedUrlExpirySeconds = Number(process.env.STORAGE_SIGNED_URL_EXPIRY_SECONDS);
+const storageSignedUrlExpirySeconds =
+  Number.isFinite(parsedStorageSignedUrlExpirySeconds) && parsedStorageSignedUrlExpirySeconds > 30
+    ? Math.floor(parsedStorageSignedUrlExpirySeconds)
+    : 900;
+
+const parsedStorageSignedUploadExpirySeconds = Number(
+  process.env.STORAGE_SIGNED_UPLOAD_EXPIRY_SECONDS
+);
+const storageSignedUploadExpirySeconds =
+  Number.isFinite(parsedStorageSignedUploadExpirySeconds) && parsedStorageSignedUploadExpirySeconds > 30
+    ? Math.floor(parsedStorageSignedUploadExpirySeconds)
+    : 900;
+
 module.exports = {
   port: process.env.PORT || 3000,
   mongodbUri: process.env.MONGODB_URI || 'mongodb://localhost:27017/rosetta',
@@ -70,4 +84,19 @@ module.exports = {
     process.env.GOOGLE_DRIVE_CLASSES_VIDEOS_FOLDER_ID || '',
   googleDrivePaymentsFolderId:
     process.env.GOOGLE_DRIVE_PAYMENTS_FOLDER_ID || '',
+  storageProvider: String(process.env.STORAGE_PROVIDER || 'gcs').toLowerCase(),
+  gcsEnabled:
+    process.env.GCS_ENABLED === '1' ||
+    process.env.GCS_ENABLED === 'true' ||
+    String(process.env.STORAGE_PROVIDER || '').toLowerCase() === 'gcs',
+  gcsProjectId: process.env.GCS_PROJECT_ID || '',
+  gcsBucketName: process.env.GCS_BUCKET_NAME || '',
+  gcsSignedUrlExpirySeconds: storageSignedUrlExpirySeconds,
+  gcsSignedUploadExpirySeconds: storageSignedUploadExpirySeconds,
+  gcsCredentialsJson: process.env.GCS_CREDENTIALS_JSON || '',
+  gcsCredentialsBase64: process.env.GCS_CREDENTIALS_BASE64 || '',
+  gcsCredentialsFile: process.env.GCS_CREDENTIALS_FILE || '',
+  gcsDocumentsPrefix: process.env.GCS_DOCUMENTS_PREFIX || 'documents',
+  gcsClassesPrefix: process.env.GCS_CLASSES_PREFIX || 'classes',
+  gcsPaymentsPrefix: process.env.GCS_PAYMENTS_PREFIX || 'payments',
 };

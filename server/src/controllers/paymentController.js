@@ -1,6 +1,7 @@
 const Payment = require('../models/Payment');
 const Class = require('../models/Class');
 const Student = require('../models/Student');
+const fs = require('fs/promises');
 const path = require('path');
 const { success, error } = require('../utils/apiResponse');
 const {
@@ -10,12 +11,16 @@ const {
   validateExtractedPayment,
 } = require('../services/paymentAIService');
 const {
-  uploadFileToGoogleDrive,
-  deleteFileFromGoogleDrive,
-  downloadFileBufferFromGoogleDrive,
+  generateObjectKey,
+  uploadFileToGcs,
+  deleteFileFromGcs,
+  getSignedDownloadUrl,
   removeTempFile,
+} = require('../services/googleCloudStorageService');
+const {
+  deleteFileFromGoogleDrive,
 } = require('../services/googleDriveService');
-const { googleDrivePaymentsFolderId, uploadDir } = require('../config/env');
+const { uploadDir } = require('../config/env');
 const Joi = require('joi');
 
 const extractGoogleDriveFileId = (url = '') => {
@@ -27,6 +32,13 @@ const extractGoogleDriveFileId = (url = '') => {
 
   return '';
 };
+
+const isGcsBill = (payment) =>
+  String(payment?.billStorageProvider || '').toLowerCase() === 'gcs' &&
+  Boolean(String(payment?.billStorageObjectKey || '').trim());
+
+const buildPaymentBillAccessApiUrl = (paymentId = '') =>
+  `/api/payments/${encodeURIComponent(String(paymentId || ''))}/bill-access-url`;
 
 const ensureStudentClassAccess = async ({ payment, cls, student, accessGrantedAt }) => {
   if (!cls || !student) return;
@@ -74,8 +86,15 @@ const ensureStudentClassAccess = async ({ payment, cls, student, accessGrantedAt
 // GET /api/payments (student: own payments)
 const getMyPayments = async (req, res) => {
   try {
-    const payments = await Payment.find({ studentEmail: req.user.email }).sort({ date: -1 });
-    return success(res, payments);
+    const payments = await Payment.find({ studentEmail: req.user.email }).sort({ date: -1 }).lean();
+    const mapped = payments.map((payment) => ({
+      ...payment,
+      billUrl: isGcsBill(payment)
+        ? buildPaymentBillAccessApiUrl(payment.paymentId)
+        : payment.billUrl,
+    }));
+
+    return success(res, mapped);
   } catch (err) {
     return error(res, err.message);
   }
@@ -84,8 +103,51 @@ const getMyPayments = async (req, res) => {
 // GET /api/payments/all (admin)
 const getAllPayments = async (req, res) => {
   try {
-    const payments = await Payment.find().sort({ date: -1 });
-    return success(res, payments);
+    const payments = await Payment.find().sort({ date: -1 }).lean();
+    const mapped = payments.map((payment) => ({
+      ...payment,
+      billUrl: isGcsBill(payment)
+        ? buildPaymentBillAccessApiUrl(payment.paymentId)
+        : payment.billUrl,
+    }));
+
+    return success(res, mapped);
+  } catch (err) {
+    return error(res, err.message);
+  }
+};
+
+// GET /api/payments/:paymentId/bill-access-url
+const getPaymentBillAccessUrl = async (req, res) => {
+  try {
+    const payment = await Payment.findOne({ paymentId: req.params.paymentId });
+    if (!payment) return error(res, 'Pago no encontrado.', 404);
+
+    const isAdmin = req.user?.role === 'admin';
+    const canAccessOwn =
+      String(payment.studentEmail || '').toLowerCase() ===
+      String(req.user?.email || '').toLowerCase();
+
+    if (!isAdmin && !canAccessOwn) {
+      return error(res, 'No autorizado para ver este comprobante.', 403);
+    }
+
+    if (isGcsBill(payment)) {
+      const signed = await getSignedDownloadUrl({
+        objectKey: payment.billStorageObjectKey,
+        inline: true,
+      });
+
+      return success(res, {
+        accessUrl: signed.downloadUrl,
+        expiresIn: signed.expiresIn,
+      });
+    }
+
+    return success(res, {
+      accessUrl: payment.billUrl || '',
+      expiresIn: null,
+    });
   } catch (err) {
     return error(res, err.message);
   }
@@ -100,7 +162,7 @@ const createPayment = async (req, res) => {
   const { error: validationError, value } = schema.validate(req.body);
   if (validationError) return error(res, validationError.details[0].message, 400);
 
-  let uploadedDriveFileId = '';
+  let uploadedBillObjectKey = '';
 
   try {
     const cls = await Class.findOne({ classCode: value.classCode });
@@ -132,31 +194,6 @@ const createPayment = async (req, res) => {
       );
     }
 
-    const driveUpload = await uploadFileToGoogleDrive({
-      filePath: req.file.path,
-      fileName: req.file.originalname || req.file.filename,
-      mimeType: req.file.mimetype,
-      folderId: googleDrivePaymentsFolderId,
-    });
-
-    if (!driveUpload.uploaded || !driveUpload.fileUrl || !driveUpload.fileId) {
-      await removeTempFile(req.file.path);
-      return error(
-        res,
-        'No se pudo almacenar el comprobante en Google Drive. Inténtalo nuevamente.',
-        503
-      );
-    }
-    uploadedDriveFileId = driveUpload.fileId;
-
-    const cleanupDriveUpload = async () => {
-      try {
-        await deleteFileFromGoogleDrive(driveUpload.fileId);
-      } catch (_) {
-        // ignore cleanup failures
-      }
-    };
-
     let extractedData;
     try {
       extractedData = await extractPaymentData(req.file.path);
@@ -165,15 +202,14 @@ const createPayment = async (req, res) => {
       }
     } catch (_) {
       try {
-        const driveBuffer = await downloadFileBufferFromGoogleDrive(driveUpload.fileId);
+        const localBuffer = await fs.readFile(req.file.path);
         extractedData = await extractPaymentDataFromBuffer({
-          buffer: driveBuffer,
+          buffer: localBuffer,
           mimeType: req.file.mimetype,
           fileName: req.file.originalname || req.file.filename,
-          source: `drive:${driveUpload.fileId}`,
+          source: `local:${req.file.filename || ''}`,
         });
       } catch (fallbackError) {
-        await cleanupDriveUpload();
         await removeTempFile(req.file.path);
         return error(
           res,
@@ -192,7 +228,7 @@ const createPayment = async (req, res) => {
     });
 
     if (!validation.checks.hasBillNumber) {
-      await cleanupDriveUpload();
+      await removeTempFile(req.file.path);
       return error(
         res,
         'No se detectó número de comprobante/documento. Sube una imagen más clara del recibo.',
@@ -209,7 +245,7 @@ const createPayment = async (req, res) => {
     // Verificar comprobante no reutilizado
     const isValid = await validatePayment(billNumber);
     if (!isValid) {
-      await cleanupDriveUpload();
+      await removeTempFile(req.file.path);
       return error(res, 'Este comprobante ya fue utilizado.', 409, {
         checks: validation.checks,
       });
@@ -224,7 +260,7 @@ const createPayment = async (req, res) => {
     const coreFailuresCount = failedCoreCriteria.length;
 
     if (coreFailuresCount >= 2) {
-      await cleanupDriveUpload();
+      await removeTempFile(req.file.path);
       return error(
         res,
         'No se pudo verificar automáticamente el comprobante. Revisa monto, destinatario y detalle, y vuelve a subirlo.',
@@ -237,9 +273,19 @@ const createPayment = async (req, res) => {
       );
     }
 
-    const billUrl = driveUpload.fileUrl;
-
     const paymentId = `PAY-${Date.now()}`;
+    const billObjectKey = generateObjectKey({
+      type: 'payments',
+      fileName: req.file.originalname || req.file.filename,
+    });
+    await uploadFileToGcs({
+      filePath: req.file.path,
+      objectKey: billObjectKey,
+      mimeType: req.file.mimetype,
+    });
+    uploadedBillObjectKey = billObjectKey;
+
+    const billUrl = buildPaymentBillAccessApiUrl(paymentId);
     const paymentStatus = coreFailuresCount === 1 ? 'pendiente' : 'aprobado';
     const resolvedAmount = Number.isFinite(validation.resolvedAmount)
       ? validation.resolvedAmount
@@ -249,6 +295,8 @@ const createPayment = async (req, res) => {
       date: extractedData.date || new Date(),
       billNumber,
       billUrl,
+      billStorageProvider: 'gcs',
+      billStorageObjectKey: billObjectKey,
       studentEmail: req.user.email,
       classCode: value.classCode,
       amount: Number.isFinite(resolvedAmount) ? resolvedAmount : null,
@@ -259,7 +307,8 @@ const createPayment = async (req, res) => {
       status: paymentStatus,
       approvedManually: false,
     });
-    uploadedDriveFileId = '';
+    uploadedBillObjectKey = '';
+    await removeTempFile(req.file.path);
 
     if (payment.status === 'aprobado') {
       const student = await Student.findOne({ email: payment.studentEmail });
@@ -287,9 +336,9 @@ const createPayment = async (req, res) => {
     if (req.file?.path) {
       await removeTempFile(req.file.path);
     }
-    if (uploadedDriveFileId) {
+    if (uploadedBillObjectKey) {
       try {
-        await deleteFileFromGoogleDrive(uploadedDriveFileId);
+        await deleteFileFromGcs(uploadedBillObjectKey);
       } catch (_) {
         // ignore cleanup failures
       }
@@ -310,6 +359,10 @@ const cancelMyPendingPayment = async (req, res) => {
 
     if (payment.status === 'aprobado') {
       return error(res, 'No puedes eliminar pagos aprobados.', 400);
+    }
+
+    if (isGcsBill(payment)) {
+      await deleteFileFromGcs(payment.billStorageObjectKey);
     }
 
     const driveFileId = extractGoogleDriveFileId(payment.billUrl || '');
@@ -342,6 +395,16 @@ const updatePaymentStatus = async (req, res) => {
     if (!payment) return error(res, 'Pago no encontrado.', 404);
 
     if (status === 'rechazado') {
+      if (isGcsBill(payment)) {
+        try {
+          await deleteFileFromGcs(payment.billStorageObjectKey);
+          payment.billUrl = '';
+          payment.billStorageObjectKey = '';
+        } catch (_) {
+          // no-op
+        }
+      }
+
       const driveFileId = extractGoogleDriveFileId(payment.billUrl || '');
       if (driveFileId) {
         try {
@@ -380,6 +443,7 @@ const updatePaymentStatus = async (req, res) => {
 module.exports = {
   getMyPayments,
   getAllPayments,
+  getPaymentBillAccessUrl,
   createPayment,
   updatePaymentStatus,
   cancelMyPendingPayment,

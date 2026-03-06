@@ -37,39 +37,6 @@ const formatDateTime = (value) => {
 
 const getClassSubject = (cls) => cls?.subject?.name || 'Sin materia';
 
-const getGoogleDriveFileId = (url = '') => {
-  const normalizedUrl = String(url || '').trim();
-
-  const idFromQuery = normalizedUrl.match(/[?&]id=([^&]+)/);
-  if (idFromQuery?.[1]) return idFromQuery[1];
-
-  const idFromPath = normalizedUrl.match(/\/d\/([^/?#]+)/);
-  if (idFromPath?.[1]) return idFromPath[1];
-
-  const idFromLh3 = normalizedUrl.match(/lh3\.googleusercontent\.com\/d\/([^/?#]+)/i);
-  if (idFromLh3?.[1]) return idFromLh3[1];
-
-  return '';
-};
-
-const getPaymentImageUrl = (billUrl = '') => {
-  const fileId = getGoogleDriveFileId(billUrl);
-  if (!fileId) return billUrl;
-  return `https://drive.google.com/thumbnail?id=${fileId}&sz=w1600`;
-};
-
-const getPaymentImageDriveUrl = (billUrl = '') => {
-  const fileId = getGoogleDriveFileId(billUrl);
-  if (!fileId) return billUrl;
-  return `https://drive.google.com/uc?export=view&id=${fileId}`;
-};
-
-const getPaymentImageLh3Url = (billUrl = '') => {
-  const fileId = getGoogleDriveFileId(billUrl);
-  if (!fileId) return '';
-  return `https://lh3.googleusercontent.com/d/${fileId}`;
-};
-
 const IMAGE_ZOOM_ANIMATION_MS = 220;
 const APPROVAL_ANIMATION_MS = 360;
 
@@ -94,6 +61,7 @@ const AdminPaymentsPage = () => {
   const [isZoomClosing, setIsZoomClosing] = useState(false);
   const [isZoomEntering, setIsZoomEntering] = useState(false);
   const [animatingApprovedIds, setAnimatingApprovedIds] = useState([]);
+  const [billAccessByPaymentId, setBillAccessByPaymentId] = useState({});
   const zoomCloseTimerRef = useRef(null);
   const zoomEnterRafRef = useRef(null);
   const approvalTimersRef = useRef({});
@@ -129,6 +97,49 @@ const AdminPaymentsPage = () => {
 
     fetchData();
   }, []);
+
+  useEffect(() => {
+    const paymentsNeedingAccess = (payments || []).filter(
+      (payment) =>
+        payment?.paymentId &&
+        payment?.billUrl &&
+        !billAccessByPaymentId[payment.paymentId]
+    );
+
+    if (paymentsNeedingAccess.length === 0) return;
+
+    let isCancelled = false;
+
+    const fetchAccessUrls = async () => {
+      const responses = await Promise.allSettled(
+        paymentsNeedingAccess.map((payment) =>
+          api.get(`/payments/${payment.paymentId}/bill-access-url`)
+        )
+      );
+
+      if (isCancelled) return;
+
+      const next = {};
+      responses.forEach((result, index) => {
+        if (result.status !== 'fulfilled') return;
+        const payment = paymentsNeedingAccess[index];
+        const accessUrl = result.value?.data?.data?.accessUrl || '';
+        if (payment?.paymentId && accessUrl) {
+          next[payment.paymentId] = accessUrl;
+        }
+      });
+
+      if (Object.keys(next).length > 0) {
+        setBillAccessByPaymentId((prev) => ({ ...prev, ...next }));
+      }
+    };
+
+    fetchAccessUrls();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [payments, billAccessByPaymentId]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -267,7 +278,7 @@ const AdminPaymentsPage = () => {
       setSuccess(
         status === 'aprobado'
           ? 'Pago aprobado correctamente.'
-          : 'Pago rechazado y comprobante eliminado de Drive (si existía).'
+          : 'Pago rechazado y comprobante eliminado del almacenamiento (si existía).'
       );
     } catch (requestError) {
       setError(requestError.response?.data?.message || 'No se pudo actualizar el estado del pago.');
@@ -322,31 +333,8 @@ const AdminPaymentsPage = () => {
     });
   };
 
-  const handleReceiptImageError = (event, billUrl = '') => {
+  const handleReceiptImageError = (event) => {
     const image = event.currentTarget;
-    const fallbackStep = Number(image.dataset.fallbackStep || '0');
-    const originalUrl = String(billUrl || '').trim();
-    const driveUrl = getPaymentImageDriveUrl(originalUrl);
-    const lh3Url = getPaymentImageLh3Url(originalUrl);
-
-    if (fallbackStep <= 0 && driveUrl) {
-      image.dataset.fallbackStep = '1';
-      image.src = driveUrl;
-      return;
-    }
-
-    if (fallbackStep <= 1 && lh3Url) {
-      image.dataset.fallbackStep = '2';
-      image.src = lh3Url;
-      return;
-    }
-
-    if (fallbackStep <= 2 && originalUrl) {
-      image.dataset.fallbackStep = '3';
-      image.src = originalUrl;
-      return;
-    }
-
     image.style.display = 'none';
   };
 
@@ -527,10 +515,21 @@ const AdminPaymentsPage = () => {
                             <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Imagen del comprobante</p>
                             {payment.billUrl ? (
                               <div className="space-y-2">
+                                {(() => {
+                                  const accessUrl = billAccessByPaymentId[payment.paymentId] || '';
+                                  if (!accessUrl) {
+                                    return (
+                                      <div className="h-28 rounded-lg border border-dashed border-gray-200 bg-gray-50 flex items-center justify-center text-gray-400 text-sm font-semibold">
+                                        Cargando comprobante seguro...
+                                      </div>
+                                    );
+                                  }
+
+                                  return (
+                                    <>
                                 <img
-                                  src={getPaymentImageUrl(payment.billUrl)}
+                                  src={accessUrl}
                                   alt={`Comprobante ${payment.paymentId}`}
-                                  data-fallback-step="0"
                                   className="w-full max-h-44 sm:max-h-56 object-contain bg-gray-50 rounded-lg border border-gray-100 cursor-zoom-in transition-transform duration-200 hover:scale-[1.01]"
                                   onClick={(event) => {
                                     event.stopPropagation();
@@ -540,10 +539,10 @@ const AdminPaymentsPage = () => {
                                       alt: `Comprobante ${payment.paymentId}`,
                                     });
                                   }}
-                                  onError={(event) => handleReceiptImageError(event, payment.billUrl)}
+                                  onError={handleReceiptImageError}
                                 />
                                 <a
-                                  href={payment.billUrl}
+                                  href={accessUrl}
                                   target="_blank"
                                   rel="noreferrer"
                                   className="inline-flex items-center gap-1 text-xs font-black text-blue-600 hover:text-blue-700"
@@ -553,6 +552,9 @@ const AdminPaymentsPage = () => {
                                 <p className="text-[11px] font-bold text-gray-400">
                                   Toca la imagen para hacer zoom.
                                 </p>
+                                    </>
+                                  );
+                                })()}
                               </div>
                             ) : (
                               <div className="h-28 rounded-lg border border-dashed border-gray-200 bg-gray-50 flex items-center justify-center text-gray-400 text-sm font-semibold">

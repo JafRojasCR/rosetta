@@ -6,20 +6,22 @@ const path = require('path');
 const {
   jwtSecret,
   uploadDir,
-  documentUploadChunkSizeMb,
   documentUploadMaxFileSizeMb,
 } = require('../config/env');
 const {
-  getDriveClient,
-  uploadFileToGoogleDrive,
-  deleteFileFromGoogleDrive,
-  createResumableUploadSession,
-  uploadChunkToResumableSession,
-  finalizeDriveFileUpload,
+  generateObjectKey,
+  getSignedUploadUrl,
+  getSignedDownloadUrl,
+  ensureObjectExists,
+  uploadFileToGcs,
+  deleteFileFromGcs,
   removeTempFile,
+} = require('../services/googleCloudStorageService');
+const {
+  getDriveClient,
+  deleteFileFromGoogleDrive,
 } = require('../services/googleDriveService');
 
-const MAX_DOCUMENT_UPLOAD_CHUNK_BYTES = documentUploadChunkSizeMb * 1024 * 1024;
 const MAX_DOCUMENT_UPLOAD_SIZE_BYTES = documentUploadMaxFileSizeMb * 1024 * 1024;
 
 const documentUploadInitSchema = Joi.object({
@@ -29,7 +31,8 @@ const documentUploadInitSchema = Joi.object({
 });
 
 const documentUploadCompleteSchema = Joi.object({
-  fileId: Joi.string().trim().min(1).required(),
+  objectKey: Joi.string().trim().min(1).required(),
+  mimeType: Joi.string().trim().min(1).required(),
 });
 
 const buildSecureVideoPlayerHtml = (streamUrl) => `<!doctype html>
@@ -185,6 +188,15 @@ const extractGoogleDriveFileId = (url = '') => {
   return '';
 };
 
+const isGcsDocument = (doc) =>
+  String(doc?.storageProvider || '').toLowerCase() === 'gcs' &&
+  String(doc?.storageObjectKey || '').trim();
+
+const buildDocumentAccessApiUrl = (docId, mode = 'download') =>
+  `/api/documents/${encodeURIComponent(String(docId || ''))}/access-url?mode=${encodeURIComponent(
+    mode
+  )}`;
+
 // GET /api/documents
 const getDocuments = async (req, res) => {
   try {
@@ -192,8 +204,13 @@ const getDocuments = async (req, res) => {
     const filter = {};
     if (subjectId) filter['subject.subjectId'] = subjectId;
 
-    const documents = await Document.find(filter).sort({ date: -1 });
-    return success(res, documents);
+    const documents = await Document.find(filter).sort({ date: -1 }).lean();
+    const mapped = documents.map((doc) => ({
+      ...doc,
+      fileUrl: isGcsDocument(doc) ? buildDocumentAccessApiUrl(doc.docId, 'download') : doc.fileUrl,
+    }));
+
+    return success(res, mapped);
   } catch (err) {
     return error(res, err.message);
   }
@@ -202,9 +219,14 @@ const getDocuments = async (req, res) => {
 // GET /api/documents/:docId
 const getDocumentById = async (req, res) => {
   try {
-    const doc = await Document.findOne({ docId: req.params.docId });
+    const doc = await Document.findOne({ docId: req.params.docId }).lean();
     if (!doc) return error(res, 'Documento no encontrado.', 404);
-    return success(res, doc);
+    const mapped = {
+      ...doc,
+      fileUrl: isGcsDocument(doc) ? buildDocumentAccessApiUrl(doc.docId, 'download') : doc.fileUrl,
+    };
+
+    return success(res, mapped);
   } catch (err) {
     return error(res, err.message);
   }
@@ -260,6 +282,15 @@ const getDocumentEmbedStreamByToken = async (req, res) => {
       return res.status(400).send('Este recurso no es un video.');
     }
 
+    if (isGcsDocument(doc)) {
+      const signed = await getSignedDownloadUrl({
+        objectKey: doc.storageObjectKey,
+        inline: true,
+      });
+
+      return res.redirect(302, signed.downloadUrl);
+    }
+
     const fileUrl = String(doc.fileUrl || '');
     const driveFileId = doc.driveFileId || extractGoogleDriveFileId(fileUrl);
     if (driveFileId) {
@@ -310,6 +341,36 @@ const getDocumentEmbedStreamByToken = async (req, res) => {
   }
 };
 
+// GET /api/documents/:docId/access-url
+const getDocumentAccessUrl = async (req, res) => {
+  try {
+    const mode = String(req.query.mode || 'download').toLowerCase();
+    const inline = mode === 'inline';
+
+    const doc = await Document.findOne({ docId: req.params.docId });
+    if (!doc) return error(res, 'Documento no encontrado.', 404);
+
+    if (isGcsDocument(doc)) {
+      const signed = await getSignedDownloadUrl({
+        objectKey: doc.storageObjectKey,
+        inline,
+      });
+
+      return success(res, {
+        accessUrl: signed.downloadUrl,
+        expiresIn: signed.expiresIn,
+      });
+    }
+
+    return success(res, {
+      accessUrl: doc.fileUrl || '',
+      expiresIn: null,
+    });
+  } catch (err) {
+    return error(res, err.message);
+  }
+};
+
 // POST /api/documents (admin)
 const createDocument = async (req, res) => {
   const schema = Joi.object({
@@ -321,6 +382,8 @@ const createDocument = async (req, res) => {
     }).required(),
     fileUrl: Joi.string().uri().allow('').optional(),
     driveFileId: Joi.string().allow('').optional(),
+    storageObjectKey: Joi.string().allow('').optional(),
+    storageProvider: Joi.string().valid('gcs', 'drive', 'local').optional(),
     mimeType: Joi.string().allow('').optional(),
   });
 
@@ -330,26 +393,31 @@ const createDocument = async (req, res) => {
   try {
     let fileUrl = '';
     let driveFileId = '';
+    let storageObjectKey = '';
+    let storageProvider = 'gcs';
     let mimeType = '';
 
     if (req.file) {
-      fileUrl = `/uploads/${req.file.filename}`;
       mimeType = req.file.mimetype;
 
-      const driveUpload = await uploadFileToGoogleDrive({
+      const objectKey = generateObjectKey({ type: 'documents', fileName: req.file.originalname });
+      await uploadFileToGcs({
         filePath: req.file.path,
-        fileName: req.file.originalname || req.file.filename,
-        mimeType: req.file.mimetype,
+        objectKey,
+        mimeType,
       });
 
-      if (driveUpload.uploaded && driveUpload.fileUrl) {
-        fileUrl = driveUpload.fileUrl;
-        driveFileId = driveUpload.fileId || '';
-        await removeTempFile(req.file.path);
-      }
+      storageObjectKey = objectKey;
+      storageProvider = 'gcs';
+      await removeTempFile(req.file.path);
+    } else if (value.storageObjectKey && value.mimeType) {
+      storageObjectKey = String(value.storageObjectKey || '').trim();
+      storageProvider = 'gcs';
+      mimeType = value.mimeType;
     } else if (value.fileUrl && value.driveFileId && value.mimeType) {
       fileUrl = value.fileUrl;
       driveFileId = value.driveFileId;
+      storageProvider = 'drive';
       mimeType = value.mimeType;
     } else {
       return error(res, 'Archivo requerido.', 400);
@@ -363,8 +431,10 @@ const createDocument = async (req, res) => {
       ...value,
       type,
       date: new Date(),
-      fileUrl,
+      fileUrl: fileUrl || buildDocumentAccessApiUrl(docId, 'download'),
       driveFileId,
+      storageProvider,
+      storageObjectKey,
       adminEmail: req.user.email,
     });
 
@@ -391,15 +461,16 @@ const initDocumentUpload = async (req, res) => {
   }
 
   try {
-    const session = await createResumableUploadSession({
+    const objectKey = generateObjectKey({
+      type: 'documents',
       fileName: value.fileName,
-      mimeType: value.mimeType,
-      fileSize: value.fileSize,
     });
+    const signed = await getSignedUploadUrl({ objectKey, mimeType: value.mimeType });
 
     return success(res, {
-      uploadUrl: session.uploadUrl,
-      chunkSize: MAX_DOCUMENT_UPLOAD_CHUNK_BYTES,
+      uploadUrl: signed.uploadUrl,
+      objectKey,
+      expiresIn: signed.expiresIn,
     });
   } catch (err) {
     return error(res, err.message);
@@ -412,14 +483,15 @@ const completeDocumentUpload = async (req, res) => {
   if (validationError) return error(res, validationError.details[0].message, 400);
 
   try {
-    const finalized = await finalizeDriveFileUpload({ fileId: value.fileId });
-    if (!finalized.fileUrl) {
-      return error(res, 'No se pudo obtener la URL pública del archivo en Drive.', 500);
+    const exists = await ensureObjectExists(value.objectKey);
+    if (!exists) {
+      return error(res, 'No se encontro el archivo cargado en GCS.', 404);
     }
 
     return success(res, {
-      fileId: finalized.fileId,
-      fileUrl: finalized.fileUrl,
+      storageProvider: 'gcs',
+      objectKey: value.objectKey,
+      mimeType: value.mimeType,
     });
   } catch (err) {
     return error(res, err.message);
@@ -428,45 +500,11 @@ const completeDocumentUpload = async (req, res) => {
 
 // PUT /api/documents/upload/chunk (admin)
 const uploadDocumentChunk = async (req, res) => {
-  const uploadUrl = String(req.headers['x-upload-url'] || '').trim();
-  const mimeType = String(req.headers['x-mime-type'] || 'application/octet-stream').trim();
-  const fileSize = Number.parseInt(String(req.headers['x-file-size'] || ''), 10);
-  const chunkStart = Number.parseInt(String(req.headers['x-chunk-start'] || ''), 10);
-  const chunkEnd = Number.parseInt(String(req.headers['x-chunk-end'] || ''), 10);
-  const chunkBuffer = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
-
-  if (!uploadUrl) return error(res, 'Falta URL de sesion de subida.', 400);
-  if (!Number.isFinite(fileSize) || fileSize <= 0) return error(res, 'Tamano total invalido.', 400);
-  if (!Number.isFinite(chunkStart) || chunkStart < 0) return error(res, 'Inicio de chunk invalido.', 400);
-  if (!Number.isFinite(chunkEnd) || chunkEnd < chunkStart) return error(res, 'Fin de chunk invalido.', 400);
-  if (chunkBuffer.length === 0) return error(res, 'Chunk vacio.', 400);
-  if (chunkBuffer.length > MAX_DOCUMENT_UPLOAD_CHUNK_BYTES) {
-    return error(res, `El chunk supera ${MAX_DOCUMENT_UPLOAD_CHUNK_BYTES} bytes.`, 400);
-  }
-
-  const expectedLength = chunkEnd - chunkStart + 1;
-  if (expectedLength !== chunkBuffer.length) {
-    return error(res, 'Rango de chunk no coincide con el tamano enviado.', 400);
-  }
-
-  try {
-    const result = await uploadChunkToResumableSession({
-      uploadUrl,
-      chunkBuffer,
-      chunkStart,
-      chunkEnd,
-      fileSize,
-      mimeType,
-    });
-
-    return success(res, {
-      done: Boolean(result.done),
-      fileId: result.fileId || null,
-      fileUrl: result.fileUrl || null,
-    });
-  } catch (err) {
-    return error(res, err.message);
-  }
+  return error(
+    res,
+    'La carga por chunks fue reemplazada por carga directa firmada a GCS. Usa /upload/init y /upload/complete.',
+    410
+  );
 };
 
 // PUT /api/documents/:docId (admin)
@@ -502,6 +540,10 @@ const deleteDocument = async (req, res) => {
     const doc = await Document.findOne({ docId: req.params.docId });
     if (!doc) return error(res, 'Documento no encontrado.', 404);
 
+    if (isGcsDocument(doc)) {
+      await deleteFileFromGcs(doc.storageObjectKey);
+    }
+
     const driveFileId = doc.driveFileId || extractGoogleDriveFileId(doc.fileUrl || '');
     if (driveFileId) {
       await deleteFileFromGoogleDrive(driveFileId);
@@ -520,6 +562,7 @@ module.exports = {
   getDocumentEmbedToken,
   getDocumentEmbedByToken,
   getDocumentEmbedStreamByToken,
+  getDocumentAccessUrl,
   initDocumentUpload,
   uploadDocumentChunk,
   completeDocumentUpload,

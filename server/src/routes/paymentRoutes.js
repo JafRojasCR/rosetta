@@ -3,6 +3,7 @@ const router = express.Router();
 const {
   getMyPayments,
   getAllPayments,
+  getPaymentBillAccessUrl,
   createPayment,
   updatePaymentStatus,
   cancelMyPendingPayment,
@@ -12,6 +13,7 @@ const upload = require('../middlewares/upload');
 
 router.get('/my', protect, studentOnly, getMyPayments);
 router.get('/all', protect, adminOnly, getAllPayments);
+router.get('/:paymentId/bill-access-url', protect, getPaymentBillAccessUrl);
 router.post('/', protect, studentOnly, upload.single('bill'), createPayment);
 router.delete('/:paymentId', protect, studentOnly, cancelMyPendingPayment);
 router.patch('/:paymentId/status', protect, adminOnly, updatePaymentStatus);

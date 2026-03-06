@@ -23,6 +23,16 @@ const paymentSchema = new mongoose.Schema(
       trim: true,
       default: null,
     },
+    billStorageProvider: {
+      type: String,
+      enum: ['gcs', 'drive', 'local'],
+      default: 'gcs',
+    },
+    billStorageObjectKey: {
+      type: String,
+      trim: true,
+      default: '',
+    },
     studentEmail: {
       type: String,
       required: true,

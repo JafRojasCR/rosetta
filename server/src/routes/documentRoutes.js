@@ -8,6 +8,7 @@ const {
   getDocumentEmbedToken,
   getDocumentEmbedByToken,
   getDocumentEmbedStreamByToken,
+  getDocumentAccessUrl,
   initDocumentUpload,
   uploadDocumentChunk,
   completeDocumentUpload,
@@ -21,6 +22,7 @@ const uploadDocument = require('../middlewares/uploadDocument');
 router.get('/', getDocuments);
 router.get('/embed/:token/stream', getDocumentEmbedStreamByToken);
 router.get('/embed/:token', getDocumentEmbedByToken);
+router.get('/:docId/access-url', protect, getDocumentAccessUrl);
 router.post('/upload/init', protect, adminOnly, initDocumentUpload);
 router.put(
   '/upload/chunk',

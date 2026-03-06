@@ -4,19 +4,20 @@ const jwt = require('jsonwebtoken');
 const path = require('path');
 const { success, error } = require('../utils/apiResponse');
 const Joi = require('joi');
-const { googleDriveClassesVideosFolderId, jwtSecret, uploadDir } = require('../config/env');
+const { jwtSecret, uploadDir } = require('../config/env');
+const {
+  generateObjectKey,
+  getSignedUploadUrl,
+  getSignedDownloadUrl,
+  ensureObjectExists,
+  uploadFileToGcs,
+  deleteFileFromGcs,
+  removeTempFile,
+} = require('../services/googleCloudStorageService');
 const {
   getDriveClient,
-  uploadFileToGoogleDrive,
   deleteFileFromGoogleDrive,
-  createResumableUploadSession,
-  uploadChunkToResumableSession,
-  finalizeDriveFileUpload,
-  removeTempFile,
 } = require('../services/googleDriveService');
-
-const MAX_CLASS_UPLOAD_CHUNK_BYTES =
-  process.env.VERCEL ? 4 * 1024 * 1024 : 32 * 1024 * 1024;
 
 const classUploadInitSchema = Joi.object({
   fileName: Joi.string().trim().min(1).required(),
@@ -25,7 +26,8 @@ const classUploadInitSchema = Joi.object({
 });
 
 const classUploadCompleteSchema = Joi.object({
-  fileId: Joi.string().trim().min(1).required(),
+  objectKey: Joi.string().trim().min(1).required(),
+  mimeType: Joi.string().trim().min(1).required(),
 });
 
 const extractGoogleDriveFileId = (url = '') => {
@@ -39,6 +41,15 @@ const extractGoogleDriveFileId = (url = '') => {
 
   return '';
 };
+
+const isGcsClassObject = (provider = '', objectKey = '') =>
+  String(provider || '').toLowerCase() === 'gcs' && Boolean(String(objectKey || '').trim());
+
+const buildClassRecordingAccessApiUrl = (classCode = '') =>
+  `/api/classes/${encodeURIComponent(String(classCode || ''))}/recording-access`;
+
+const buildClassCanvaAccessApiUrl = (classCode = '') =>
+  `/api/classes/${encodeURIComponent(String(classCode || ''))}/canva-access`;
 
 const isClassUnlockedForUser = (cls, userEmail) => {
   if (!userEmail) return false;
@@ -448,7 +459,17 @@ const getClasses = async (req, res) => {
           };
 
     const classes = await Class.find(filter).select(projection).sort({ date: -1 }).lean();
-    return success(res, classes);
+    const mapped = classes.map((cls) => ({
+      ...cls,
+      recordingUrl: isGcsClassObject(cls.recordingStorageProvider, cls.recordingStorageObjectKey)
+        ? buildClassRecordingAccessApiUrl(cls.classCode)
+        : cls.recordingUrl,
+      canvaUrl: isGcsClassObject(cls.canvaStorageProvider, cls.canvaStorageObjectKey)
+        ? buildClassCanvaAccessApiUrl(cls.classCode)
+        : cls.canvaUrl,
+    }));
+
+    return success(res, mapped);
   } catch (err) {
     return error(res, err.message);
   }
@@ -472,6 +493,13 @@ const getClassByCode = async (req, res) => {
     }
 
     const classData = cls.toObject();
+    if (isGcsClassObject(classData.recordingStorageProvider, classData.recordingStorageObjectKey)) {
+      classData.recordingUrl = buildClassRecordingAccessApiUrl(classData.classCode);
+    }
+    if (isGcsClassObject(classData.canvaStorageProvider, classData.canvaStorageObjectKey)) {
+      classData.canvaUrl = buildClassCanvaAccessApiUrl(classData.classCode);
+    }
+
     if (!hasPaid && !cls.isPublic) {
       classData.recordingUrl = null;
       classData.canvaUrl = null;
@@ -492,8 +520,10 @@ const createClass = async (req, res) => {
     date: Joi.date().required(),
     isPublic: Joi.boolean().default(false),
     price: Joi.number().min(0).required(),
-    recordingUrl: Joi.string().uri().allow(null, '').optional(),
-    canvaUrl: Joi.string().uri().allow(null, '').optional(),
+    recordingUrl: Joi.string().allow(null, '').optional(),
+    recordingStorageObjectKey: Joi.string().allow('').optional(),
+    canvaUrl: Joi.string().allow(null, '').optional(),
+    canvaStorageObjectKey: Joi.string().allow('').optional(),
     subject: Joi.object({
       subjectId: Joi.string().required(),
       name: Joi.string().required(),
@@ -528,46 +558,63 @@ const createClass = async (req, res) => {
     if (existing) return error(res, 'Ya existe una clase con ese código.', 409);
 
     let recordingUrl = value.recordingUrl || null;
+    let recordingStorageObjectKey = String(value.recordingStorageObjectKey || '').trim();
+    let recordingStorageProvider = recordingStorageObjectKey ? 'gcs' : 'drive';
     let canvaUrl = value.canvaUrl || null;
+    let canvaStorageObjectKey = String(value.canvaStorageObjectKey || '').trim();
+    let canvaStorageProvider = canvaStorageObjectKey ? 'gcs' : 'drive';
 
     const recordingFile = req.files?.recordingFile?.[0];
     const canvaFile = req.files?.canvaFile?.[0];
 
     if (recordingFile) {
-      const uploaded = await uploadFileToGoogleDrive({
-        filePath: recordingFile.path,
+      const recordingKey = generateObjectKey({
+        type: 'classes',
         fileName: recordingFile.originalname || recordingFile.filename,
+      });
+      await uploadFileToGcs({
+        filePath: recordingFile.path,
+        objectKey: recordingKey,
         mimeType: recordingFile.mimetype,
-        folderId: googleDriveClassesVideosFolderId,
       });
 
-      if (uploaded.uploaded && uploaded.fileUrl) {
-        recordingUrl = uploaded.fileUrl;
-        await removeTempFile(recordingFile.path);
-      } else {
-        recordingUrl = `/uploads/${recordingFile.filename}`;
-      }
+      recordingStorageProvider = 'gcs';
+      recordingStorageObjectKey = recordingKey;
+      await removeTempFile(recordingFile.path);
     }
 
     if (canvaFile) {
-      const uploaded = await uploadFileToGoogleDrive({
-        filePath: canvaFile.path,
+      const canvaKey = generateObjectKey({
+        type: 'classes',
         fileName: canvaFile.originalname || canvaFile.filename,
+      });
+      await uploadFileToGcs({
+        filePath: canvaFile.path,
+        objectKey: canvaKey,
         mimeType: canvaFile.mimetype,
       });
 
-      if (uploaded.uploaded && uploaded.fileUrl) {
-        canvaUrl = uploaded.fileUrl;
-        await removeTempFile(canvaFile.path);
-      } else {
-        canvaUrl = `/uploads/${canvaFile.filename}`;
-      }
+      canvaStorageProvider = 'gcs';
+      canvaStorageObjectKey = canvaKey;
+      await removeTempFile(canvaFile.path);
+    }
+
+    if (recordingStorageObjectKey) {
+      recordingUrl = buildClassRecordingAccessApiUrl(value.classCode);
+    }
+
+    if (canvaStorageObjectKey) {
+      canvaUrl = buildClassCanvaAccessApiUrl(value.classCode);
     }
 
     const cls = await Class.create({
       ...value,
       recordingUrl,
+      recordingStorageProvider,
+      recordingStorageObjectKey,
       canvaUrl,
+      canvaStorageProvider,
+      canvaStorageObjectKey,
       adminEmail: value.adminEmail || req.user.email,
     });
     return success(res, cls, 'Clase creada exitosamente', 201);
@@ -588,16 +635,16 @@ const initClassRecordingUpload = async (req, res) => {
       return error(res, 'Solo se permite carga por chunks para archivos de video.', 400);
     }
 
-    const session = await createResumableUploadSession({
+    const objectKey = generateObjectKey({
+      type: 'classes',
       fileName: value.fileName,
-      mimeType: value.mimeType,
-      fileSize: value.fileSize,
-      folderId: googleDriveClassesVideosFolderId,
     });
+    const signed = await getSignedUploadUrl({ objectKey, mimeType: value.mimeType });
 
     return success(res, {
-      uploadUrl: session.uploadUrl,
-      chunkSize: MAX_CLASS_UPLOAD_CHUNK_BYTES,
+      uploadUrl: signed.uploadUrl,
+      objectKey,
+      expiresIn: signed.expiresIn,
     });
   } catch (err) {
     return error(res, err.message);
@@ -606,45 +653,11 @@ const initClassRecordingUpload = async (req, res) => {
 
 // PUT /api/classes/recording-upload/chunk (admin)
 const uploadClassRecordingChunk = async (req, res) => {
-  const uploadUrl = String(req.headers['x-upload-url'] || '').trim();
-  const mimeType = String(req.headers['x-mime-type'] || 'application/octet-stream').trim();
-  const fileSize = Number.parseInt(String(req.headers['x-file-size'] || ''), 10);
-  const chunkStart = Number.parseInt(String(req.headers['x-chunk-start'] || ''), 10);
-  const chunkEnd = Number.parseInt(String(req.headers['x-chunk-end'] || ''), 10);
-  const chunkBuffer = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
-
-  if (!uploadUrl) return error(res, 'Falta URL de sesion de subida.', 400);
-  if (!Number.isFinite(fileSize) || fileSize <= 0) return error(res, 'Tamano total invalido.', 400);
-  if (!Number.isFinite(chunkStart) || chunkStart < 0) return error(res, 'Inicio de chunk invalido.', 400);
-  if (!Number.isFinite(chunkEnd) || chunkEnd < chunkStart) return error(res, 'Fin de chunk invalido.', 400);
-  if (chunkBuffer.length === 0) return error(res, 'Chunk vacio.', 400);
-  if (chunkBuffer.length > MAX_CLASS_UPLOAD_CHUNK_BYTES) {
-    return error(res, `El chunk supera ${MAX_CLASS_UPLOAD_CHUNK_BYTES} bytes.`, 400);
-  }
-
-  const expectedLength = chunkEnd - chunkStart + 1;
-  if (expectedLength !== chunkBuffer.length) {
-    return error(res, 'Rango de chunk no coincide con el tamano enviado.', 400);
-  }
-
-  try {
-    const result = await uploadChunkToResumableSession({
-      uploadUrl,
-      chunkBuffer,
-      chunkStart,
-      chunkEnd,
-      fileSize,
-      mimeType,
-    });
-
-    return success(res, {
-      done: Boolean(result.done),
-      fileId: result.fileId || null,
-      fileUrl: result.fileUrl || null,
-    });
-  } catch (err) {
-    return error(res, err.message);
-  }
+  return error(
+    res,
+    'La carga por chunks fue reemplazada por carga directa firmada a GCS. Usa /recording-upload/init y /recording-upload/complete.',
+    410
+  );
 };
 
 // POST /api/classes/recording-upload/complete (admin)
@@ -653,14 +666,15 @@ const completeClassRecordingUpload = async (req, res) => {
   if (validationError) return error(res, validationError.details[0].message, 400);
 
   try {
-    const finalized = await finalizeDriveFileUpload({ fileId: value.fileId });
-    if (!finalized.fileUrl) {
-      return error(res, 'No se pudo obtener la URL pública del video en Drive.', 500);
+    const exists = await ensureObjectExists(value.objectKey);
+    if (!exists) {
+      return error(res, 'No se encontro el archivo cargado en GCS.', 404);
     }
 
     return success(res, {
-      fileId: finalized.fileId,
-      fileUrl: finalized.fileUrl,
+      storageProvider: 'gcs',
+      objectKey: value.objectKey,
+      mimeType: value.mimeType,
     });
   } catch (err) {
     return error(res, err.message);
@@ -676,8 +690,10 @@ const updateClass = async (req, res) => {
     date: Joi.date().optional(),
     isPublic: Joi.boolean().optional(),
     price: Joi.number().min(0).optional(),
-    recordingUrl: Joi.string().uri().allow(null, '').optional(),
-    canvaUrl: Joi.string().uri().allow(null, '').optional(),
+    recordingUrl: Joi.string().allow(null, '').optional(),
+    recordingStorageObjectKey: Joi.string().allow('').optional(),
+    canvaUrl: Joi.string().allow(null, '').optional(),
+    canvaStorageObjectKey: Joi.string().allow('').optional(),
     subject: Joi.object({
       subjectId: Joi.string().required(),
       name: Joi.string().required(),
@@ -754,58 +770,85 @@ const updateClass = async (req, res) => {
     const canvaFile = req.files?.canvaFile?.[0];
 
     if (recordingFile) {
-      const uploaded = await uploadFileToGoogleDrive({
-        filePath: recordingFile.path,
+      const recordingKey = generateObjectKey({
+        type: 'classes',
         fileName: recordingFile.originalname || recordingFile.filename,
-        mimeType: recordingFile.mimetype,
-        folderId: googleDriveClassesVideosFolderId,
       });
 
-      if (uploaded.uploaded && uploaded.fileUrl) {
-        updateData.recordingUrl = uploaded.fileUrl;
-        await removeTempFile(recordingFile.path);
+      await uploadFileToGcs({
+        filePath: recordingFile.path,
+        objectKey: recordingKey,
+        mimeType: recordingFile.mimetype,
+      });
 
+      updateData.recordingStorageProvider = 'gcs';
+      updateData.recordingStorageObjectKey = recordingKey;
+      updateData.recordingUrl = buildClassRecordingAccessApiUrl(
+        willChangeClassCode ? nextClassCode : existingClass.classCode
+      );
+      await removeTempFile(recordingFile.path);
+
+      if (isGcsClassObject(existingClass.recordingStorageProvider, existingClass.recordingStorageObjectKey)) {
+        await deleteFileFromGcs(existingClass.recordingStorageObjectKey);
+      } else {
         const previousRecordingFileId = extractGoogleDriveFileId(existingClass.recordingUrl || '');
-        const newRecordingFileId = extractGoogleDriveFileId(updateData.recordingUrl || '');
-        if (previousRecordingFileId && previousRecordingFileId !== newRecordingFileId) {
+        if (previousRecordingFileId) {
           try {
             await deleteFileFromGoogleDrive(previousRecordingFileId);
           } catch (_) {
-            // no-op: avoid blocking class update if old Drive file cannot be deleted
+            // no-op
           }
         }
-      } else {
-        updateData.recordingUrl = `/uploads/${recordingFile.filename}`;
       }
-    } else if (
-      typeof updateData.recordingUrl === 'string' &&
-      updateData.recordingUrl &&
-      updateData.recordingUrl !== existingClass.recordingUrl
-    ) {
-      const previousRecordingFileId = extractGoogleDriveFileId(existingClass.recordingUrl || '');
-      const newRecordingFileId = extractGoogleDriveFileId(updateData.recordingUrl || '');
-      if (previousRecordingFileId && previousRecordingFileId !== newRecordingFileId) {
-        try {
-          await deleteFileFromGoogleDrive(previousRecordingFileId);
-        } catch (_) {
-          // no-op: avoid blocking class update if old Drive file cannot be deleted
-        }
-      }
+    } else if (String(updateData.recordingStorageObjectKey || '').trim()) {
+      updateData.recordingStorageProvider = 'gcs';
+      updateData.recordingStorageObjectKey = String(updateData.recordingStorageObjectKey || '').trim();
+      updateData.recordingUrl = buildClassRecordingAccessApiUrl(
+        willChangeClassCode ? nextClassCode : existingClass.classCode
+      );
     }
 
     if (canvaFile) {
-      const uploaded = await uploadFileToGoogleDrive({
-        filePath: canvaFile.path,
+      const canvaKey = generateObjectKey({
+        type: 'classes',
         fileName: canvaFile.originalname || canvaFile.filename,
+      });
+
+      await uploadFileToGcs({
+        filePath: canvaFile.path,
+        objectKey: canvaKey,
         mimeType: canvaFile.mimetype,
       });
 
-      if (uploaded.uploaded && uploaded.fileUrl) {
-        updateData.canvaUrl = uploaded.fileUrl;
-        await removeTempFile(canvaFile.path);
-      } else {
-        updateData.canvaUrl = `/uploads/${canvaFile.filename}`;
+      updateData.canvaStorageProvider = 'gcs';
+      updateData.canvaStorageObjectKey = canvaKey;
+      updateData.canvaUrl = buildClassCanvaAccessApiUrl(
+        willChangeClassCode ? nextClassCode : existingClass.classCode
+      );
+      await removeTempFile(canvaFile.path);
+
+      if (isGcsClassObject(existingClass.canvaStorageProvider, existingClass.canvaStorageObjectKey)) {
+        await deleteFileFromGcs(existingClass.canvaStorageObjectKey);
       }
+    } else if (String(updateData.canvaStorageObjectKey || '').trim()) {
+      updateData.canvaStorageProvider = 'gcs';
+      updateData.canvaStorageObjectKey = String(updateData.canvaStorageObjectKey || '').trim();
+      updateData.canvaUrl = buildClassCanvaAccessApiUrl(
+        willChangeClassCode ? nextClassCode : existingClass.classCode
+      );
+    } else if (
+      willChangeClassCode &&
+      isGcsClassObject(existingClass.canvaStorageProvider, existingClass.canvaStorageObjectKey)
+    ) {
+      updateData.canvaUrl = buildClassCanvaAccessApiUrl(nextClassCode);
+    }
+
+    if (
+      willChangeClassCode &&
+      isGcsClassObject(existingClass.recordingStorageProvider, existingClass.recordingStorageObjectKey) &&
+      !updateData.recordingUrl
+    ) {
+      updateData.recordingUrl = buildClassRecordingAccessApiUrl(nextClassCode);
     }
 
     const cls = await Class.findByIdAndUpdate(existingClass._id, updateData, {
@@ -874,6 +917,14 @@ const deleteClass = async (req, res) => {
   try {
     const cls = await Class.findOne({ classCode: req.params.classCode });
     if (!cls) return error(res, 'Clase no encontrada.', 404);
+
+    if (isGcsClassObject(cls.recordingStorageProvider, cls.recordingStorageObjectKey)) {
+      await deleteFileFromGcs(cls.recordingStorageObjectKey);
+    }
+
+    if (isGcsClassObject(cls.canvaStorageProvider, cls.canvaStorageObjectKey)) {
+      await deleteFileFromGcs(cls.canvaStorageObjectKey);
+    }
 
     const recordingFileId = extractGoogleDriveFileId(cls.recordingUrl || '');
     const canvaFileId = extractGoogleDriveFileId(cls.canvaUrl || '');
@@ -959,6 +1010,20 @@ const getClassEmbedStreamByToken = async (req, res) => {
     const recordingUrl = context.cls.recordingUrl || '';
     if (!recordingUrl) return res.status(404).send('Video no disponible.');
 
+    if (
+      isGcsClassObject(
+        context.cls.recordingStorageProvider,
+        context.cls.recordingStorageObjectKey
+      )
+    ) {
+      const signed = await getSignedDownloadUrl({
+        objectKey: context.cls.recordingStorageObjectKey,
+        inline: true,
+      });
+
+      return res.redirect(302, signed.downloadUrl);
+    }
+
     const driveFileId = extractGoogleDriveFileId(recordingUrl);
     if (driveFileId) {
       const drive = getDriveClient();
@@ -1008,6 +1073,74 @@ const getClassEmbedStreamByToken = async (req, res) => {
   }
 };
 
+// GET /api/classes/:classCode/recording-access
+const getClassRecordingAccessUrl = async (req, res) => {
+  try {
+    const cls = await Class.findOne({ classCode: req.params.classCode });
+    if (!cls) return error(res, 'Clase no encontrada.', 404);
+
+    const isAdmin = req.user?.role === 'admin';
+    const canAccess = isAdmin || cls.isPublic || isClassUnlockedForUser(cls, req.user?.email);
+    if (!canAccess) {
+      return error(res, 'Clase bloqueada para este estudiante.', 403);
+    }
+
+    if (
+      isGcsClassObject(cls.recordingStorageProvider, cls.recordingStorageObjectKey)
+    ) {
+      const signed = await getSignedDownloadUrl({
+        objectKey: cls.recordingStorageObjectKey,
+        inline: true,
+      });
+
+      return success(res, {
+        accessUrl: signed.downloadUrl,
+        expiresIn: signed.expiresIn,
+      });
+    }
+
+    return success(res, {
+      accessUrl: cls.recordingUrl || '',
+      expiresIn: null,
+    });
+  } catch (err) {
+    return error(res, err.message);
+  }
+};
+
+// GET /api/classes/:classCode/canva-access
+const getClassCanvaAccessUrl = async (req, res) => {
+  try {
+    const cls = await Class.findOne({ classCode: req.params.classCode });
+    if (!cls) return error(res, 'Clase no encontrada.', 404);
+
+    const isAdmin = req.user?.role === 'admin';
+    const canAccess = isAdmin || cls.isPublic || isClassUnlockedForUser(cls, req.user?.email);
+    if (!canAccess) {
+      return error(res, 'Clase bloqueada para este estudiante.', 403);
+    }
+
+    if (isGcsClassObject(cls.canvaStorageProvider, cls.canvaStorageObjectKey)) {
+      const signed = await getSignedDownloadUrl({
+        objectKey: cls.canvaStorageObjectKey,
+        inline: true,
+      });
+
+      return success(res, {
+        accessUrl: signed.downloadUrl,
+        expiresIn: signed.expiresIn,
+      });
+    }
+
+    return success(res, {
+      accessUrl: cls.canvaUrl || '',
+      expiresIn: null,
+    });
+  } catch (err) {
+    return error(res, err.message);
+  }
+};
+
 module.exports = {
   getClasses,
   getClassByCode,
@@ -1020,5 +1153,7 @@ module.exports = {
   getClassEmbedToken,
   getClassEmbedByToken,
   getClassEmbedStreamByToken,
+  getClassRecordingAccessUrl,
+  getClassCanvaAccessUrl,
   setClassVote,
 };

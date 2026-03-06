@@ -13,6 +13,8 @@ const {
   getClassEmbedToken,
   getClassEmbedByToken,
   getClassEmbedStreamByToken,
+  getClassRecordingAccessUrl,
+  getClassCanvaAccessUrl,
   setClassVote,
 } = require('../controllers/classController');
 const { protect, adminOnly, optionalAuth, studentOnly } = require('../middlewares/authMiddleware');
@@ -31,6 +33,8 @@ router.put(
 router.get('/embed/:token/stream', getClassEmbedStreamByToken);
 router.get('/embed/:token', getClassEmbedByToken);
 router.get('/:classCode/embed-token', protect, getClassEmbedToken);
+router.get('/:classCode/recording-access', protect, getClassRecordingAccessUrl);
+router.get('/:classCode/canva-access', protect, getClassCanvaAccessUrl);
 router.patch('/:classCode/vote', protect, studentOnly, setClassVote);
 router.get('/:classCode', optionalAuth, getClassByCode);
 router.post(

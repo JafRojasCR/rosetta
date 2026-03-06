@@ -121,8 +121,6 @@ const formatReadableDate = (value = '') => {
   return `${day}/${monthFormatted}/${parsed.year}`;
 };
 
-const CLASS_VIDEO_CHUNK_SIZE_BYTES = 32 * 1024 * 1024;
-
 const AdminClassesPage = () => {
   const navigate = useNavigate();
   const [isVisible, setIsVisible] = useState(false);
@@ -473,56 +471,43 @@ const AdminClassesPage = () => {
       });
 
       const uploadUrl = initResponse.data?.data?.uploadUrl;
-      const chunkSize = Number(initResponse.data?.data?.chunkSize) || CLASS_VIDEO_CHUNK_SIZE_BYTES;
+      const objectKey = String(initResponse.data?.data?.objectKey || '').trim();
 
       if (!uploadUrl) {
-        throw new Error('No se pudo iniciar la carga por bloques del video.');
+        throw new Error('No se pudo iniciar la carga directa del video.');
       }
 
-      let offset = 0;
-      let uploadedFileUrl = '';
-
-      while (offset < file.size) {
-        const endExclusive = Math.min(offset + chunkSize, file.size);
-        const chunk = file.slice(offset, endExclusive);
-        const chunkBuffer = await chunk.arrayBuffer();
-        const chunkStart = offset;
-        const chunkEnd = endExclusive - 1;
-
-        const uploadResponse = await api.put('/classes/recording-upload/chunk', chunkBuffer, {
-          headers: {
-            'Content-Type': 'application/octet-stream',
-            'X-Upload-Url': uploadUrl,
-            'X-Chunk-Start': String(chunkStart),
-            'X-Chunk-End': String(chunkEnd),
-            'X-File-Size': String(file.size),
-            'X-Mime-Type': file.type || 'application/octet-stream',
-          },
-        });
-
-        const chunkData = uploadResponse.data?.data || {};
-
-        if (chunkData.done) {
-          const fileId = String(chunkData.fileId || '').trim();
-          if (!fileId) throw new Error('No se pudo obtener el fileId de Drive.');
-
-          const completeResponse = await api.post('/classes/recording-upload/complete', {
-            fileId,
-          });
-          uploadedFileUrl = completeResponse.data?.data?.fileUrl || '';
-        }
-
-        offset = endExclusive;
-        const uploadRatio = offset / file.size;
-        const progress = Math.min(90, Math.round(uploadRatio * 90));
-        setUploadProgress((prev) => Math.max(prev, progress));
+      if (!objectKey) {
+        throw new Error('No se obtuvo la llave del video en GCS.');
       }
 
-      if (!uploadedFileUrl) {
-        throw new Error('No se pudo completar la subida del video a Drive.');
+      setUploadProgress(20);
+
+      const directUploadResponse = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': file.type || 'application/octet-stream',
+        },
+        body: file,
+      });
+
+      if (!directUploadResponse.ok) {
+        throw new Error('Falló la carga directa del video a GCS.');
       }
 
-      return uploadedFileUrl;
+      setUploadProgress(85);
+
+      const completeResponse = await api.post('/classes/recording-upload/complete', {
+        objectKey,
+        mimeType: file.type || 'application/octet-stream',
+      });
+      const uploadedObjectKey = String(completeResponse.data?.data?.objectKey || '').trim();
+
+      if (!uploadedObjectKey) {
+        throw new Error('No se pudo confirmar la subida del video en GCS.');
+      }
+
+      return uploadedObjectKey;
     };
 
     try {
@@ -544,8 +529,8 @@ const AdminClassesPage = () => {
       payload.append('classStudents', JSON.stringify(classStudentsEntries));
 
       if (form.recordingFile) {
-        const uploadedRecordingUrl = await uploadRecordingByChunks(form.recordingFile);
-        payload.append('recordingUrl', uploadedRecordingUrl);
+        const uploadedRecordingObjectKey = await uploadRecordingByChunks(form.recordingFile);
+        payload.append('recordingStorageObjectKey', uploadedRecordingObjectKey);
       }
 
       const requestConfig = {

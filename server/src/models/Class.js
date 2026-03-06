@@ -36,10 +36,30 @@ const classSchema = new mongoose.Schema(
       trim: true,
       default: null,
     },
+    recordingStorageProvider: {
+      type: String,
+      enum: ['gcs', 'drive', 'local'],
+      default: 'gcs',
+    },
+    recordingStorageObjectKey: {
+      type: String,
+      trim: true,
+      default: '',
+    },
     canvaUrl: {
       type: String,
       trim: true,
       default: null,
+    },
+    canvaStorageProvider: {
+      type: String,
+      enum: ['gcs', 'drive', 'local'],
+      default: 'gcs',
+    },
+    canvaStorageObjectKey: {
+      type: String,
+      trim: true,
+      default: '',
     },
     subject: {
       subjectId: { type: String, required: true },

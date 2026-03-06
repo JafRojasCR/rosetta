@@ -29,30 +29,6 @@ const normalizeType = (resource) => {
   return 'pdf';
 };
 
-const getGoogleDriveFileId = (url) => {
-  if (!url) return '';
-
-  const idFromQuery = url.match(/[?&]id=([^&]+)/);
-  if (idFromQuery?.[1]) return idFromQuery[1];
-
-  const idFromPath = url.match(/\/d\/([^/]+)/);
-  if (idFromPath?.[1]) return idFromPath[1];
-
-  return '';
-};
-
-const getDownloadUrl = (url) => {
-  const fileId = getGoogleDriveFileId(url);
-  if (!fileId) return url;
-  return `https://drive.google.com/uc?export=download&id=${fileId}`;
-};
-
-const getPdfPreviewUrl = (url) => {
-  const fileId = getGoogleDriveFileId(url);
-  if (fileId) return `https://drive.google.com/file/d/${fileId}/preview`;
-  return url;
-};
-
 const buildResource = (doc) => {
   const type = normalizeType(doc);
   const dateValue = doc?.date || doc?.createdAt || doc?.updatedAt;
@@ -185,7 +161,14 @@ const DocumentsPage = () => {
         }
         setViewerUrl(iframeUrl);
       } else {
-        setViewerUrl(getPdfPreviewUrl(resource.fileUrl));
+        const accessResponse = await api.get(`/documents/${resource.id}/access-url`, {
+          params: { mode: 'inline' },
+        });
+        const accessUrl = accessResponse.data?.data?.accessUrl || '';
+        if (!accessUrl) {
+          throw new Error('No se pudo preparar el acceso al documento.');
+        }
+        setViewerUrl(accessUrl);
       }
     } catch (requestError) {
       setViewerError(
@@ -387,9 +370,19 @@ const DocumentsPage = () => {
                   {res.fileUrl ? (
                     <button
                       type="button"
-                      onClick={(event) => {
+                      onClick={async (event) => {
                         event.stopPropagation();
-                        window.open(getDownloadUrl(res.fileUrl), '_blank', 'noopener,noreferrer');
+                        try {
+                          const accessResponse = await api.get(`/documents/${res.id}/access-url`, {
+                            params: { mode: 'download' },
+                          });
+                          const accessUrl = accessResponse.data?.data?.accessUrl || '';
+                          if (accessUrl) {
+                            window.open(accessUrl, '_blank', 'noopener,noreferrer');
+                          }
+                        } catch (_requestError) {
+                          setError('No se pudo obtener el enlace de descarga seguro.');
+                        }
                       }}
                       className="w-full bg-gray-50 hover:bg-blue-600 hover:text-white text-blue-600 font-black py-3 px-4 rounded-xl transition-all flex items-center justify-center gap-2"
                     >
