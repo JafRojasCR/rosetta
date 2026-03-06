@@ -34,6 +34,7 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const sessionCheckInFlightRef = useRef(false);
   const lastSessionCheckAtRef = useRef(0);
+  const authenticatedUserEmail = String(user?.email || '').toLowerCase();
 
   const clearAuthState = useCallback(() => {
     localStorage.removeItem('token');
@@ -129,7 +130,7 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     if (loading) return undefined;
-    if (!localStorage.getItem('token') || !user) return undefined;
+    if (!localStorage.getItem('token') || !authenticatedUserEmail) return undefined;
 
     checkSessionHealth({ force: true });
 
@@ -147,7 +148,7 @@ export const AuthProvider = ({ children }) => {
       clearInterval(intervalId);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, [loading, user, checkSessionHealth]);
+  }, [loading, authenticatedUserEmail, checkSessionHealth]);
 
   const login = async (email, password) => {
     const response = await api.post('/auth/login', { email, password });
