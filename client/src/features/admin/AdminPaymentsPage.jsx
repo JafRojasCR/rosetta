@@ -676,33 +676,47 @@ const AdminPaymentsPage = () => {
                                 <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Imagen del comprobante</p>
                                 {payment.billUrl ? (
                                   <div className="space-y-2">
-                                    <img
-                                      src={getPaymentImageUrl(payment.billUrl)}
-                                      alt={`Comprobante ${payment.paymentId}`}
-                                      data-fallback-step="0"
-                                      className="w-full max-h-44 sm:max-h-56 object-contain bg-gray-50 rounded-lg border border-gray-100 cursor-zoom-in transition-transform duration-200 hover:scale-[1.01]"
-                                      onClick={(event) => {
-                                        event.stopPropagation();
-                                        const nextSrc = event.currentTarget.currentSrc || event.currentTarget.src;
-                                        openImageZoom({
-                                          src: nextSrc,
-                                          alt: `Comprobante ${payment.paymentId}`,
-                                        });
-                                      }}
-                                      onError={(event) => handleReceiptImageError(event, payment.billUrl)}
-                                    />
-                                    <a
-                                      href={payment.billUrl}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="inline-flex items-center gap-1 text-xs font-black text-blue-600 hover:text-blue-700"
-                                      onClick={(event) => event.stopPropagation()}
-                                    >
-                                      <ExternalLink size={14} /> Abrir comprobante
-                                    </a>
-                                    <p className="text-[11px] font-bold text-gray-400">
-                                      Toca la imagen para hacer zoom.
-                                    </p>
+                                    {(() => {
+                                      const accessUrl = billAccessByPaymentId[payment.paymentId] || '';
+                                      if (!accessUrl) {
+                                        return (
+                                          <div className="h-28 rounded-lg border border-dashed border-gray-200 bg-gray-50 flex items-center justify-center text-gray-400 text-sm font-semibold">
+                                            Cargando comprobante seguro...
+                                          </div>
+                                        );
+                                      }
+
+                                      return (
+                                        <>
+                                          <img
+                                            src={accessUrl}
+                                            alt={`Comprobante ${payment.paymentId}`}
+                                            className="w-full max-h-44 sm:max-h-56 object-contain bg-gray-50 rounded-lg border border-gray-100 cursor-zoom-in transition-transform duration-200 hover:scale-[1.01]"
+                                            onClick={(event) => {
+                                              event.stopPropagation();
+                                              const nextSrc = event.currentTarget.currentSrc || event.currentTarget.src;
+                                              openImageZoom({
+                                                src: nextSrc,
+                                                alt: `Comprobante ${payment.paymentId}`,
+                                              });
+                                            }}
+                                            onError={handleReceiptImageError}
+                                          />
+                                          <a
+                                            href={accessUrl}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="inline-flex items-center gap-1 text-xs font-black text-blue-600 hover:text-blue-700"
+                                            onClick={(event) => event.stopPropagation()}
+                                          >
+                                            <ExternalLink size={14} /> Abrir comprobante
+                                          </a>
+                                          <p className="text-[11px] font-bold text-gray-400">
+                                            Toca la imagen para hacer zoom.
+                                          </p>
+                                        </>
+                                      );
+                                    })()}
                                   </div>
                                 ) : (
                                   <div className="h-28 rounded-lg border border-dashed border-gray-200 bg-gray-50 flex items-center justify-center text-gray-400 text-sm font-semibold">
@@ -727,7 +741,7 @@ const AdminPaymentsPage = () => {
               <p className="text-sm font-black">Regla de revisión manual</p>
             </div>
             <p className="text-xs font-semibold text-gray-500 leading-relaxed">
-              Todo pago pendiente requiere decisión explícita. Si se rechaza, el comprobante se elimina de Google Drive automáticamente.
+              Todo pago pendiente requiere decisión explícita. Si se rechaza, el comprobante se elimina del almacenamiento automáticamente.
             </p>
           </div>
         </section>
