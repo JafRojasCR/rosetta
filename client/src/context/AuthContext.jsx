@@ -5,7 +5,7 @@ import api from '../services/api';
 export const AuthContext = createContext(null);
 const PENDING_2FA_KEY = 'pending2fa';
 const DEVICE_ID_KEY = 'rosettaDeviceId';
-const SESSION_CHECK_INTERVAL_MS = 30 * 1000;
+const SESSION_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 
 const createDeviceId = () => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -33,6 +33,7 @@ export const AuthProvider = ({ children }) => {
   const [pendingTwoFactor, setPendingTwoFactor] = useState(null);
   const [loading, setLoading] = useState(true);
   const sessionCheckInFlightRef = useRef(false);
+  const lastSessionCheckAtRef = useRef(0);
 
   const clearAuthState = useCallback(() => {
     localStorage.removeItem('token');
@@ -87,11 +88,17 @@ export const AuthProvider = ({ children }) => {
     setLoading(false);
   }, []);
 
-  const checkSessionHealth = useCallback(async () => {
+  const checkSessionHealth = useCallback(async (options = {}) => {
+    const { force = false } = options;
     const token = localStorage.getItem('token');
     if (!token) return;
     if (sessionCheckInFlightRef.current) return;
 
+    const now = Date.now();
+    const elapsedSinceLastCheck = now - lastSessionCheckAtRef.current;
+    if (!force && elapsedSinceLastCheck < SESSION_CHECK_INTERVAL_MS) return;
+
+    lastSessionCheckAtRef.current = now;
     sessionCheckInFlightRef.current = true;
     try {
       const response = await api.get('/auth/me', { skipAuthRedirect: true });
@@ -121,12 +128,14 @@ export const AuthProvider = ({ children }) => {
   }, [forceLogoutBySessionState]);
 
   useEffect(() => {
-    if (loading || !user) return undefined;
+    if (loading) return undefined;
     if (!localStorage.getItem('token')) return undefined;
 
-    checkSessionHealth();
+    checkSessionHealth({ force: true });
 
-    const intervalId = setInterval(checkSessionHealth, SESSION_CHECK_INTERVAL_MS);
+    const intervalId = setInterval(() => {
+      checkSessionHealth();
+    }, SESSION_CHECK_INTERVAL_MS);
     const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         checkSessionHealth();
@@ -138,7 +147,7 @@ export const AuthProvider = ({ children }) => {
       clearInterval(intervalId);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, [loading, user, checkSessionHealth]);
+  }, [loading, checkSessionHealth]);
 
   const login = async (email, password) => {
     const response = await api.post('/auth/login', { email, password });

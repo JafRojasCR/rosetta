@@ -132,7 +132,7 @@ const RegisterPage = () => {
                 name="name"
                 value={form.name}
                 onChange={handleChange}
-                placeholder="Nombre..."
+                placeholder="Nombre"
                 className={`w-full p-4 bg-gray-100 rounded-2xl outline-none border-2 transition-all duration-300 placeholder:text-gray-400 ${
                   error ? 'border-red-400' : 'border-transparent focus:border-blue-500 focus:bg-white focus:shadow-lg focus:shadow-blue-100'
                 }`}
@@ -144,7 +144,7 @@ const RegisterPage = () => {
                 name="lastName"
                 value={form.lastName}
                 onChange={handleChange}
-                placeholder="Apellido..."
+                placeholder="Apellido"
                 className={`w-full p-4 bg-gray-100 rounded-2xl outline-none border-2 transition-all duration-300 placeholder:text-gray-400 ${
                   error ? 'border-red-400' : 'border-transparent focus:border-blue-500 focus:bg-white focus:shadow-lg focus:shadow-blue-100'
                 }`}
@@ -158,7 +158,7 @@ const RegisterPage = () => {
               name="email"
               value={form.email}
               onChange={handleChange}
-              placeholder="Correo electrónico..."
+              placeholder="Correo electrónico"
               className={`w-full p-4 bg-gray-100 rounded-2xl outline-none border-2 transition-all duration-300 placeholder:text-gray-400 ${
                 error ? 'border-red-400' : 'border-transparent focus:border-blue-500 focus:bg-white focus:shadow-lg focus:shadow-blue-100'
               }`}
@@ -171,7 +171,7 @@ const RegisterPage = () => {
               name="phone"
               value={form.phone}
               onChange={handleChange}
-              placeholder="Teléfono..."
+              placeholder="Teléfono"
               className={`w-full p-4 bg-gray-100 rounded-2xl outline-none border-2 transition-all duration-300 placeholder:text-gray-400 ${
                 error ? 'border-red-400' : 'border-transparent focus:border-blue-500 focus:bg-white focus:shadow-lg focus:shadow-blue-100'
               }`}
@@ -184,7 +184,7 @@ const RegisterPage = () => {
               name="password"
               value={form.password}
               onChange={handleChange}
-              placeholder="Contraseña..."
+              placeholder="Contraseña"
               onFocus={() => setShowPasswordGuidelines(true)}
               onBlur={() => setShowPasswordGuidelines(false)}
               className={`w-full p-4 bg-gray-100 rounded-2xl outline-none border-2 transition-all duration-300 placeholder:text-gray-400 ${

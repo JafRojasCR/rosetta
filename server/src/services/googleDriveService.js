@@ -271,6 +271,88 @@ const removeTempFile = async (filePath) => {
   }
 };
 
+const buildDriveDirectMediaUrl = (fileId, resourceKey = '') => {
+  const normalizedFileId = String(fileId || '').trim();
+  if (!normalizedFileId) return '';
+
+  const params = new URLSearchParams({
+    export: 'download',
+    id: normalizedFileId,
+    confirm: 't',
+  });
+
+  const normalizedResourceKey = String(resourceKey || '').trim();
+  if (normalizedResourceKey) {
+    params.set('resourcekey', normalizedResourceKey);
+  }
+
+  return `https://drive.usercontent.google.com/download?${params.toString()}`;
+};
+
+const resolveDriveDirectMediaUrl = async ({ fileId, fallbackResourceKey = '' }) => {
+  const normalizedFileId = String(fileId || '').trim();
+  if (!normalizedFileId) return '';
+
+  const fallbackUrl = buildDriveDirectMediaUrl(normalizedFileId, fallbackResourceKey);
+
+  try {
+    const drive = getDriveClient();
+    if (!drive) return fallbackUrl;
+
+    const metadata = await drive.files.get({
+      fileId: normalizedFileId,
+      fields: 'id,webContentLink,resourceKey',
+      supportsAllDrives: true,
+    });
+
+    const webContentLink = String(metadata.data?.webContentLink || '').trim();
+    if (webContentLink) {
+      return webContentLink;
+    }
+
+    const resourceKey = String(metadata.data?.resourceKey || fallbackResourceKey || '').trim();
+    return buildDriveDirectMediaUrl(normalizedFileId, resourceKey);
+  } catch (_) {
+    return fallbackUrl;
+  }
+};
+
+const probeDriveDirectMediaUrl = async (url) => {
+  const normalizedUrl = String(url || '').trim();
+  if (!normalizedUrl) {
+    return { ok: false, status: 0, reason: 'empty-url' };
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+  try {
+    const response = await fetch(normalizedUrl, {
+      method: 'GET',
+      headers: {
+        Range: 'bytes=0-1',
+      },
+      redirect: 'follow',
+      signal: controller.signal,
+    });
+
+    const ok = response.status === 200 || response.status === 206;
+    return {
+      ok,
+      status: response.status,
+      reason: ok ? 'ok' : 'http-status',
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      status: 0,
+      reason: err?.name === 'AbortError' ? 'timeout' : 'request-failed',
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+};
+
 module.exports = {
   isDriveConfigured,
   getDriveAuthClient,
@@ -281,5 +363,8 @@ module.exports = {
   createResumableUploadSession,
   uploadChunkToResumableSession,
   finalizeDriveFileUpload,
+  buildDriveDirectMediaUrl,
+  resolveDriveDirectMediaUrl,
+  probeDriveDirectMediaUrl,
   removeTempFile,
 };

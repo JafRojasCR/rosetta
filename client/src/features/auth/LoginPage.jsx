@@ -101,7 +101,7 @@ const LoginPage = () => {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="Correo electrónico..."
+              placeholder="Correo electrónico"
               className={`w-full p-4 bg-gray-100 rounded-2xl outline-none border-2 transition-colors duration-500 placeholder:text-gray-400 ${
                 highlightError ? 'border-red-400' : 'border-transparent focus:border-blue-500 focus:bg-white focus:shadow-lg focus:shadow-blue-100'
               }`}
@@ -114,7 +114,7 @@ const LoginPage = () => {
               type={showPassword ? 'text' : 'password'}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Contraseña..."
+              placeholder="Contraseña"
               className={`w-full p-4 bg-gray-100 rounded-2xl outline-none border-2 transition-colors duration-500 placeholder:text-gray-400 ${
                 highlightError ? 'border-red-400' : 'border-transparent focus:border-blue-500 focus:bg-white focus:shadow-lg focus:shadow-blue-100'
               }`}

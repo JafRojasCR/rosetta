@@ -2,8 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
-input[type='password']::-webkit-credentials-auto-fill-button,
-input[type='password']::-webkit-textfield-decoration-container {
+/* Keep native credential icon hidden without removing Safari's password text rendering container. */
+input[type='password']::-webkit-credentials-auto-fill-button {
 	display: none !important;
 }
 

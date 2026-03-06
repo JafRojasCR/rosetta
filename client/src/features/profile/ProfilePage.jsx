@@ -318,13 +318,15 @@ const ProfilePage = () => {
                     </label>
                     <div className="relative">
                       <input
-                        type={showPassword.new ? 'text' : 'password'}
+                        type="text"
+                        autoComplete="new-password"
                         placeholder="••••••••"
                         value={passwords.new}
                         onFocus={handlePasswordFocus}
                         onBlur={handlePasswordBlur}
                         onChange={(e) => setPasswords({ ...passwords, new: e.target.value })}
-                        className="w-full bg-gray-50 border-transparent border-2 focus:border-blue-500 focus:bg-white rounded-2xl px-5 pr-12 py-3.5 font-semibold transition-all outline-none"
+                        style={showPassword.new ? undefined : { WebkitTextSecurity: 'disc' }}
+                        className="w-full bg-gray-50 border-transparent border-2 focus:border-blue-500 focus:bg-white rounded-2xl px-5 pr-12 py-3.5 font-semibold transition-colors outline-none"
                       />
                       <button
                         type="button"
@@ -341,13 +343,15 @@ const ProfilePage = () => {
                     </label>
                     <div className="relative">
                       <input
-                        type={showPassword.confirm ? 'text' : 'password'}
+                        type="text"
+                        autoComplete="new-password"
                         placeholder="••••••••"
                         value={passwords.confirm}
                         onFocus={handlePasswordFocus}
                         onBlur={handlePasswordBlur}
                         onChange={(e) => setPasswords({ ...passwords, confirm: e.target.value })}
-                        className={`w-full bg-gray-50 border-2 focus:bg-white rounded-2xl px-5 pr-20 py-3.5 font-semibold transition-all outline-none ${
+                        style={showPassword.confirm ? undefined : { WebkitTextSecurity: 'disc' }}
+                        className={`w-full bg-gray-50 border-2 focus:bg-white rounded-2xl px-5 pr-20 py-3.5 font-semibold transition-colors outline-none ${
                           passwords.confirm && (passwordsMatch ? 'border-emerald-500' : 'border-red-400')
                         }`}
                       />
