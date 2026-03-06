@@ -94,10 +94,10 @@ const SettingsPage = () => {
   const externalTools = useMemo(
     () => [
       {
-        name: 'Google Drive',
+        name: 'Google Cloud Storage',
         desc: 'Almacenamiento de archivos',
         icon: <HardDrive className="text-blue-500" />,
-        url: 'https://drive.google.com/drive/folders/1GbAevYQ_LRaEdRp0E0lkEfnKfBPi-6U5',
+        url: 'https://console.cloud.google.com/storage/browser/rosetta-storage-prod;tab=objects?forceOnBucketsSortingFiltering=true&authuser=5&walkthrough_id=storage--storage_configure_cors&project=rosetta-488900&prefix=&forceOnObjectsSortingFiltering=false',
         color: 'hover:border-blue-200 hover:bg-blue-50/30',
       },
       {
@@ -111,7 +111,7 @@ const SettingsPage = () => {
         name: 'Vercel',
         desc: 'Logs de despliegue',
         icon: <Zap className="text-purple-500" />,
-        url: 'https://vercel.com/jafrojascrs-projects/rosetta',
+        url: 'https://vercel.com/proyectorosetta-1708s-projects/rosetta-project',
         color: 'hover:border-purple-200 hover:bg-purple-50/30',
       },
     ],

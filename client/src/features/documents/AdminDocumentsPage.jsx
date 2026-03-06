@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, UploadCloud, FileText, Trash2 } from 'lucide-react';
 import api from '../../services/api';
 import CustomSelectMenu from '../../components/CustomSelectMenu';
+import { uploadToSignedUrl } from '../../services/directUpload';
 
 const AdminDocumentsPage = () => {
   const navigate = useNavigate();
@@ -99,21 +100,21 @@ const AdminDocumentsPage = () => {
         throw new Error('No se obtuvo la llave del archivo en GCS.');
       }
 
-      setUploadProgress(20);
+      setUploadProgress(5);
 
-      const directUploadResponse = await fetch(uploadUrl, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': file.type || 'application/octet-stream',
+      await uploadToSignedUrl({
+        uploadUrl,
+        file,
+        mimeType: file.type || 'application/octet-stream',
+        onProgress: ({ loaded, total }) => {
+          if (!total || total <= 0) return;
+          // 5-90% reserved for actual bytes uploaded to GCS
+          const percent = Math.round((loaded * 85) / total) + 5;
+          setUploadProgress(Math.max(5, Math.min(90, percent)));
         },
-        body: file,
       });
 
-      if (!directUploadResponse.ok) {
-        throw new Error('Falló la carga directa del recurso a GCS.');
-      }
-
-      setUploadProgress(85);
+      setUploadProgress((prev) => Math.max(prev, 90));
 
       const completeResponse = await api.post('/documents/upload/complete', {
         objectKey,

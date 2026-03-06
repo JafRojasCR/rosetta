@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import api from '../../services/api';
 import CustomSelectMenu from '../../components/CustomSelectMenu';
+import { uploadToSignedUrl } from '../../services/directUpload';
 
 const toDateInputValue = (value) => {
   if (!value) return '';
@@ -481,21 +482,21 @@ const AdminClassesPage = () => {
         throw new Error('No se obtuvo la llave del video en GCS.');
       }
 
-      setUploadProgress(20);
+      setUploadProgress(5);
 
-      const directUploadResponse = await fetch(uploadUrl, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': file.type || 'application/octet-stream',
+      await uploadToSignedUrl({
+        uploadUrl,
+        file,
+        mimeType: file.type || 'application/octet-stream',
+        onProgress: ({ loaded, total }) => {
+          if (!total || total <= 0) return;
+          // 5-90% reserved for actual bytes uploaded to GCS
+          const percent = Math.round((loaded * 85) / total) + 5;
+          setUploadProgress(Math.max(5, Math.min(90, percent)));
         },
-        body: file,
       });
 
-      if (!directUploadResponse.ok) {
-        throw new Error('Falló la carga directa del video a GCS.');
-      }
-
-      setUploadProgress(85);
+      setUploadProgress((prev) => Math.max(prev, 90));
 
       const completeResponse = await api.post('/classes/recording-upload/complete', {
         objectKey,
@@ -537,12 +538,13 @@ const AdminClassesPage = () => {
         headers: { 'Content-Type': 'multipart/form-data' },
         onUploadProgress: (progressEvent) => {
           if (progressEvent.total) {
-            const next = Math.min(95, Math.round((progressEvent.loaded * 95) / progressEvent.total));
+            // Final API payload is small; only advance 95-99% here
+            const next = 95 + Math.round((progressEvent.loaded * 4) / progressEvent.total);
             setUploadProgress((prev) => Math.max(prev, next));
             return;
           }
 
-          setUploadProgress((prev) => Math.min(prev + 4, 95));
+          setUploadProgress((prev) => Math.min(prev + 1, 99));
         },
       };
 
@@ -556,6 +558,7 @@ const AdminClassesPage = () => {
 
       const nextClasses = await loadClasses();
       setClasses(nextClasses);
+      setUploadProgress(100);
       setIsEditing(false);
       setEditingClassCode('');
       resetForm(true);

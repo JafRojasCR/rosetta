@@ -154,12 +154,14 @@ const DocumentsPage = () => {
 
     try {
       if (resource.type === 'video') {
-        const response = await api.get(`/documents/${resource.id}/embed-token`);
-        const iframeUrl = response.data?.data?.iframeUrl || '';
-        if (!iframeUrl) {
-          throw new Error('No se pudo preparar el reproductor del video.');
+        const accessResponse = await api.get(`/documents/${resource.id}/access-url`, {
+          params: { mode: 'inline' },
+        });
+        const accessUrl = accessResponse.data?.data?.accessUrl || '';
+        if (!accessUrl) {
+          throw new Error('No se pudo preparar el acceso al video.');
         }
-        setViewerUrl(iframeUrl);
+        setViewerUrl(accessUrl);
       } else {
         const accessResponse = await api.get(`/documents/${resource.id}/access-url`, {
           params: { mode: 'inline' },
@@ -527,19 +529,34 @@ const DocumentsPage = () => {
                 </div>
               ) : viewerUrl ? (
                 viewerType === 'video' ? (
-                  <iframe
+                  <video
                     src={viewerUrl}
                     title={`Video ${viewerTitle}`}
-                    className="w-full h-full border-0"
-                    sandbox="allow-same-origin allow-scripts"
-                    allow="autoplay; encrypted-media"
+                    className="w-full h-full"
+                    controls
+                    preload="metadata"
+                    controlsList="nodownload noplaybackrate noremoteplayback"
+                    disablePictureInPicture
+                    playsInline
                   />
                 ) : (
-                  <iframe
-                    src={viewerUrl}
-                    title={`PDF ${viewerTitle}`}
-                    className="w-full h-full border-0 bg-white"
-                  />
+                  <object
+                    data={viewerUrl}
+                    type="application/pdf"
+                    className="w-full h-full bg-white"
+                  >
+                    <div className="w-full h-full flex flex-col items-center justify-center gap-4 text-white/90 px-6 text-center">
+                      <p className="font-semibold">No se pudo visualizar el PDF en el visor integrado.</p>
+                      <a
+                        href={viewerUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white text-blue-700 font-black"
+                      >
+                        <ExternalLink size={16} /> Abrir PDF en otra ventana
+                      </a>
+                    </div>
+                  </object>
                 )
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-white/80 font-semibold">

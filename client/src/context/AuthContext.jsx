@@ -1,5 +1,5 @@
 import { createContext, useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 
 export const AuthContext = createContext(null);
@@ -28,19 +28,21 @@ const getOrCreateDeviceId = () => {
 
 export const AuthProvider = ({ children }) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [user, setUser] = useState(null);
   const [role, setRole] = useState(null);
+  const [authToken, setAuthToken] = useState('');
   const [pendingTwoFactor, setPendingTwoFactor] = useState(null);
   const [loading, setLoading] = useState(true);
   const sessionCheckInFlightRef = useRef(false);
   const lastSessionCheckAtRef = useRef(0);
-  const authenticatedUserEmail = String(user?.email || '').toLowerCase();
 
   const clearAuthState = useCallback(() => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     localStorage.removeItem('role');
     sessionStorage.removeItem(PENDING_2FA_KEY);
+    setAuthToken('');
     setUser(null);
     setRole(null);
     setPendingTwoFactor(null);
@@ -76,6 +78,7 @@ export const AuthProvider = ({ children }) => {
     if (storedUser && token) {
       setUser(JSON.parse(storedUser));
       setRole(storedRole);
+      setAuthToken(token);
     }
 
     if (storedPendingTwoFactor) {
@@ -130,13 +133,14 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     if (loading) return undefined;
-    if (!localStorage.getItem('token') || !authenticatedUserEmail) return undefined;
+    if (!authToken) return undefined;
 
     checkSessionHealth({ force: true });
 
     const intervalId = setInterval(() => {
       checkSessionHealth();
     }, SESSION_CHECK_INTERVAL_MS);
+
     const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         checkSessionHealth();
@@ -148,7 +152,13 @@ export const AuthProvider = ({ children }) => {
       clearInterval(intervalId);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, [loading, authenticatedUserEmail, checkSessionHealth]);
+  }, [loading, authToken, checkSessionHealth]);
+
+  useEffect(() => {
+    if (loading || !authToken) return;
+    // Route changes trigger a health check, throttled internally to 5 minutes.
+    checkSessionHealth();
+  }, [location.pathname, loading, authToken, checkSessionHealth]);
 
   const login = async (email, password) => {
     const response = await api.post('/auth/login', { email, password });
@@ -179,6 +189,7 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem('user', JSON.stringify(userData));
     localStorage.setItem('role', resolvedRole);
 
+    setAuthToken(token);
     setUser(userData);
     setRole(resolvedRole);
     setPendingTwoFactor(null);
@@ -217,6 +228,7 @@ export const AuthProvider = ({ children }) => {
       localStorage.setItem('user', JSON.stringify(userData));
       localStorage.setItem('role', resolvedRole || 'student');
 
+      setAuthToken(token);
       setUser(userData);
       setRole(resolvedRole || 'student');
       setPendingTwoFactor(null);

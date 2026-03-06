@@ -801,11 +801,32 @@ const updateClass = async (req, res) => {
         }
       }
     } else if (String(updateData.recordingStorageObjectKey || '').trim()) {
+      const nextRecordingObjectKey = String(updateData.recordingStorageObjectKey || '').trim();
+      const previousRecordingObjectKey = String(existingClass.recordingStorageObjectKey || '').trim();
+
       updateData.recordingStorageProvider = 'gcs';
-      updateData.recordingStorageObjectKey = String(updateData.recordingStorageObjectKey || '').trim();
+      updateData.recordingStorageObjectKey = nextRecordingObjectKey;
       updateData.recordingUrl = buildClassRecordingAccessApiUrl(
         willChangeClassCode ? nextClassCode : existingClass.classCode
       );
+
+      // Signed-upload edit flow: remove old object when key changes.
+      if (
+        isGcsClassObject(existingClass.recordingStorageProvider, previousRecordingObjectKey) &&
+        previousRecordingObjectKey &&
+        previousRecordingObjectKey !== nextRecordingObjectKey
+      ) {
+        await deleteFileFromGcs(previousRecordingObjectKey);
+      } else if (!isGcsClassObject(existingClass.recordingStorageProvider, previousRecordingObjectKey)) {
+        const previousRecordingFileId = extractGoogleDriveFileId(existingClass.recordingUrl || '');
+        if (previousRecordingFileId) {
+          try {
+            await deleteFileFromGoogleDrive(previousRecordingFileId);
+          } catch (_) {
+            // no-op
+          }
+        }
+      }
     }
 
     if (canvaFile) {

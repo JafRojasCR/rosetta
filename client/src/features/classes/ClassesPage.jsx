@@ -45,8 +45,9 @@ const ClassesPage = () => {
   const [sortBy, setSortBy] = useState('date');
   const [sortOrder, setSortOrder] = useState('desc');
   const [isAnimating, setIsAnimating] = useState(false);
-  const [iframeUrls, setIframeUrls] = useState({});
-  const [loadingIframeByClass, setLoadingIframeByClass] = useState({});
+  const [recordingAccessUrls, setRecordingAccessUrls] = useState({});
+  const [loadingVideoByClass, setLoadingVideoByClass] = useState({});
+  const [loadingCanvaByClass, setLoadingCanvaByClass] = useState({});
   const [votingByClass, setVotingByClass] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -169,19 +170,40 @@ const ClassesPage = () => {
     const nextExpanded = expandedId === cls.classCode ? '' : cls.classCode;
     setExpandedId(nextExpanded);
 
-    if (!nextExpanded || iframeUrls[cls.classCode] || !cls.recordingUrl) {
+    if (!nextExpanded || recordingAccessUrls[cls.classCode] || !cls.recordingUrl) {
       return;
     }
 
-    setLoadingIframeByClass((prev) => ({ ...prev, [cls.classCode]: true }));
+    setLoadingVideoByClass((prev) => ({ ...prev, [cls.classCode]: true }));
     try {
-      const response = await api.get(`/classes/${cls.classCode}/embed-token`);
-      const iframeUrl = response.data.data?.iframeUrl || '';
-      setIframeUrls((prev) => ({ ...prev, [cls.classCode]: iframeUrl }));
+      const response = await api.get(`/classes/${cls.classCode}/recording-access`);
+      const accessUrl = response.data?.data?.accessUrl || '';
+      setRecordingAccessUrls((prev) => ({ ...prev, [cls.classCode]: accessUrl }));
     } catch (_requestError) {
-      setError('No se pudo cargar el reproductor de la clase.');
+      setError('No se pudo obtener el enlace seguro del video.');
     } finally {
-      setLoadingIframeByClass((prev) => ({ ...prev, [cls.classCode]: false }));
+      setLoadingVideoByClass((prev) => ({ ...prev, [cls.classCode]: false }));
+    }
+  };
+
+  const openCanvaResource = async (cls, event) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (!cls?.classCode) return;
+    setLoadingCanvaByClass((prev) => ({ ...prev, [cls.classCode]: true }));
+
+    try {
+      const response = await api.get(`/classes/${cls.classCode}/canva-access`);
+      const accessUrl = response.data?.data?.accessUrl || '';
+      if (!accessUrl) {
+        throw new Error('Sin URL de acceso.');
+      }
+      window.open(accessUrl, '_blank', 'noopener,noreferrer');
+    } catch (_requestError) {
+      setError('No se pudo abrir el recurso de Canva.');
+    } finally {
+      setLoadingCanvaByClass((prev) => ({ ...prev, [cls.classCode]: false }));
     }
   };
 
@@ -417,17 +439,19 @@ const ClassesPage = () => {
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                     <div className="lg:col-span-7 relative">
                       <div className="aspect-video rounded-3xl overflow-hidden border border-gray-100 bg-gray-900 shadow-inner">
-                        {loadingIframeByClass[cls.classCode] ? (
+                        {loadingVideoByClass[cls.classCode] ? (
                           <div className="w-full h-full flex items-center justify-center text-white/90 font-bold">
                             Cargando video...
                           </div>
-                        ) : iframeUrls[cls.classCode] ? (
-                          <iframe
-                            src={iframeUrls[cls.classCode]}
-                            title={`Video ${cls.displayTitle}`}
-                            className="w-full h-full border-0"
-                            sandbox="allow-same-origin allow-scripts"
-                            allow="autoplay; encrypted-media"
+                        ) : recordingAccessUrls[cls.classCode] ? (
+                          <video
+                            src={recordingAccessUrls[cls.classCode]}
+                            className="w-full h-full"
+                            controls
+                            preload="metadata"
+                            controlsList="nodownload noplaybackrate noremoteplayback"
+                            disablePictureInPicture
+                            playsInline
                           />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-white/90 font-bold">
@@ -438,12 +462,16 @@ const ClassesPage = () => {
 
                       {cls.canvaUrl && (
                         <a
-                          href={cls.canvaUrl}
+                          href="#"
                           target="_blank"
                           rel="noopener noreferrer"
+                          onClick={(event) => openCanvaResource(cls, event)}
                           className="absolute top-3 right-3 bg-white p-2 rounded-xl shadow-lg hover:scale-105 transition-transform"
                           title="Abrir Canva"
                         >
+                          {loadingCanvaByClass[cls.classCode] ? (
+                            <span className="text-[10px] font-black text-gray-500 px-1">...</span>
+                          ) : null}
                           <img src="/canvaicon.png" alt="Canva" className="w-7 h-7 object-contain" />
                         </a>
                       )}

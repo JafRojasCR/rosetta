@@ -358,20 +358,20 @@ Hazlo por lotes y con auditoria (log de IDs migrados + checksum si posible).
 
 ## 9.1 Funcional
 
-- [ ] Subir documento grande desde admin funciona
-- [ ] Subir video de clase grande funciona
-- [ ] Visualizar PDF funciona en viewer
-- [ ] Descargar documento funciona
-- [ ] Ver video embebido de clase funciona
-- [ ] Ver comprobante en admin funciona
-- [ ] Rechazar pago elimina archivo en GCS
+- [X] Subir documento grande desde admin funciona
+- [X] Subir video de clase grande funciona
+- [X] Visualizar PDF funciona en viewer
+- [X] Descargar documento funciona
+- [X] Ver video embebido de clase funciona
+- [X] Ver comprobante en admin funciona
+- [X] Rechazar pago elimina archivo en GCS
 
 ## 9.2 Seguridad
 
-- [ ] Bucket no publico
-- [ ] Solo signed URLs habilitan acceso
-- [ ] TTL de signed URLs configurado
-- [ ] Endpoint de access-url valida permisos por rol/usuario
+- [X] Bucket no publico
+- [X] Solo signed URLs habilitan acceso
+- [X] TTL de signed URLs configurado
+- [X] Endpoint de access-url valida permisos por rol/usuario
 
 ## 9.3 Costos y performance
 
