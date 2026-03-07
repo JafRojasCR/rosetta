@@ -309,7 +309,7 @@ const sendMail = async ({ to, subject, html }) => {
     if (!candidate) return '';
     const match = candidate.match(/<([^>]+)>/);
     const address = match ? match[1].trim() : candidate;
-    return `Rosetta <${address}>`;
+    return `Rosetta`;
   };
 
   const mailPayload = {
@@ -334,7 +334,7 @@ const sendMail = async ({ to, subject, html }) => {
       if (!passwordTransporter || !looksLikeAuthFailure) {
         if (looksLikeAuthFailure) {
           throw new Error(
-            'Autenticación de Gmail rechazada. Verifica que EMAIL_USER sea la misma cuenta autorizada, regenera EMAIL_REFRESH_TOKEN con scope https://mail.google.com/ y usa EMAIL_FROM con formato "Rosetta <correo@gmail.com>".'
+            'Autenticación de Gmail rechazada. Verifica que EMAIL_USER sea la misma cuenta autorizada, regenera EMAIL_REFRESH_TOKEN con scope https://mail.google.com/ y usa EMAIL_FROM con formato "Rosetta".'
           );
         }
         throw oauthError;

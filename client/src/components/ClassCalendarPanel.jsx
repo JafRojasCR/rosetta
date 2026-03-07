@@ -904,9 +904,6 @@ const ClassCalendarPanel = ({
 
           <div>
             <h1 className="text-lg sm:text-2xl font-bold text-gray-800 tracking-tight">Calendario</h1>
-            <p className="text-sm text-gray-500">
-              {isAdmin ? 'Administra disponibilidad y solicitudes' : 'Solicita horarios disponibles para tus clases'}
-            </p>
           </div>
         </div>
 
