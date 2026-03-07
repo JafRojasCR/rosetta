@@ -90,7 +90,7 @@ const AppRouter = () => {
         }
       />
       <Route
-        path="/clases/calendario"
+        path="/calendario"
         element={
           <ProtectedRoute requiredRole="student">
             <StudentCalendarPage />
@@ -154,12 +154,17 @@ const AppRouter = () => {
         }
       />
       <Route
-        path="/admin/clases/calendario"
+        path="/admin/calendario"
         element={
           <ProtectedRoute requiredRole="admin">
             <AdminCalendarPage />
           </ProtectedRoute>
         }
+      />
+      <Route path="/clases/calendario" element={<Navigate to="/calendario" replace />} />
+      <Route
+        path="/admin/clases/calendario"
+        element={<Navigate to="/admin/calendario" replace />}
       />
       <Route
         path="/admin/pagos"

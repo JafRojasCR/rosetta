@@ -35,6 +35,8 @@ const POPUP_FALLBACK_HEIGHT = 360;
 const AVAILABLE_RETURN_ANIMATION_MS = 520;
 const MOBILE_POPOVER_BREAKPOINT = 900;
 const TOUCH_SCROLL_CANCEL_THRESHOLD = 12;
+const TOUCH_HOLD_TO_SELECT_MS = 500;
+const AUTO_SCROLL_STEP_PX = 8;
 
 const toIsoDate = (value) => {
   if (!value) return '';
@@ -174,6 +176,8 @@ const ClassCalendarPanel = ({
   const autoScrollDirectionRef = useRef(0);
   const lastPointerXRef = useRef(null);
   const isTouchDraggingRef = useRef(false);
+  const touchHoldTimerRef = useRef(null);
+  const pendingTouchMinuteRef = useRef(null);
   const touchStartXRef = useRef(null);
   const touchStartYRef = useRef(null);
   const touchStartScrollLeftRef = useRef(0);
@@ -245,6 +249,9 @@ const ClassCalendarPanel = ({
       }
       if (popoverCloseTimerRef.current) {
         clearTimeout(popoverCloseTimerRef.current);
+      }
+      if (touchHoldTimerRef.current) {
+        clearTimeout(touchHoldTimerRef.current);
       }
       if (availableReturnTimerRef.current) {
         clearTimeout(availableReturnTimerRef.current);
@@ -466,7 +473,7 @@ const ClassCalendarPanel = ({
     }
 
     const before = container.scrollLeft;
-    container.scrollLeft = before + direction * 14;
+    container.scrollLeft = before + direction * AUTO_SCROLL_STEP_PX;
 
     if (lastPointerXRef.current !== null) {
       updateDragEndFromPointer(lastPointerXRef.current);
@@ -501,6 +508,63 @@ const ClassCalendarPanel = ({
     setDragStart(null);
     setDragEnd(null);
   }, [stopAutoScroll]);
+
+  const clearTouchHold = useCallback(() => {
+    if (touchHoldTimerRef.current) {
+      clearTimeout(touchHoldTimerRef.current);
+      touchHoldTimerRef.current = null;
+    }
+    pendingTouchMinuteRef.current = null;
+  }, []);
+
+  const canStartSelectionAtMinute = useCallback(
+    (minute) => {
+      if (isAdmin) {
+        const occupied = daySlots.some(
+          (slot) => minute >= slot.startMinute && minute < slot.endMinute
+        );
+        return !occupied;
+      }
+
+      const insideAvailable = daySlots.some(
+        (slot) =>
+          slot.status === 'available' &&
+          minute >= slot.startMinute &&
+          minute < slot.endMinute
+      );
+      if (!insideAvailable) return false;
+
+      const blocked = daySlots.some(
+        (slot) =>
+          (slot.status === 'pending' || slot.status === 'booked') &&
+          minute >= slot.startMinute &&
+          minute < slot.endMinute
+      );
+      return !blocked;
+    },
+    [daySlots, isAdmin]
+  );
+
+  const startSelection = useCallback(
+    ({ minute, point = null, isTouch = false }) => {
+      if (!canStartSelectionAtMinute(minute)) return false;
+
+      setError('');
+      setMessage('');
+
+      if (activePopover) {
+        closePopover();
+      }
+
+      setIsDragging(true);
+      setDragStart(minute);
+      setDragEnd(minute);
+      lastPointerXRef.current = Number.isFinite(point?.x) ? point.x : null;
+      isTouchDraggingRef.current = isTouch;
+      return true;
+    },
+    [activePopover, canStartSelectionAtMinute, closePopover]
+  );
 
   const openPopover = useCallback(
     (nextPopover) => {
@@ -539,62 +603,67 @@ const ClassCalendarPanel = ({
   }, []);
 
   const handleMouseDown = (minute, event) => {
-    const source = event?.nativeEvent || event;
-    const isTouchEvent = Boolean(source?.touches || source?.changedTouches || event?.type?.includes('touch'));
-    if (!isTouchEvent) {
-      event.preventDefault();
-    }
-
-    setError('');
-    setMessage('');
-
-    if (activePopover) {
-      closePopover();
-    }
-
-    if (isAdmin) {
-      const occupied = daySlots.some(
-        (slot) => minute >= slot.startMinute && minute < slot.endMinute
-      );
-      if (occupied) return;
-    } else {
-      const insideAvailable = daySlots.some(
-        (slot) =>
-          slot.status === 'available' &&
-          minute >= slot.startMinute &&
-          minute < slot.endMinute
-      );
-      if (!insideAvailable) return;
-
-      const blocked = daySlots.some(
-        (slot) =>
-          (slot.status === 'pending' || slot.status === 'booked') &&
-          minute >= slot.startMinute &&
-          minute < slot.endMinute
-      );
-      if (blocked) return;
-    }
-
-    setIsDragging(true);
-    setDragStart(minute);
-    setDragEnd(minute);
-
+    event.preventDefault();
     const point = getEventClientPoint(event, event.currentTarget);
-    lastPointerXRef.current = Number.isFinite(point?.x) ? point.x : null;
+    startSelection({ minute, point, isTouch: false });
+  };
 
-    if (isTouchEvent) {
-      const container = timelineScrollRef.current;
-      isTouchDraggingRef.current = true;
-      touchScrollIntentRef.current = false;
-      touchStartXRef.current = point?.x ?? null;
-      touchStartYRef.current = point?.y ?? null;
-      touchStartScrollLeftRef.current = container?.scrollLeft || 0;
-    } else {
-      isTouchDraggingRef.current = false;
-      touchScrollIntentRef.current = false;
-      touchStartXRef.current = null;
-      touchStartYRef.current = null;
-      touchStartScrollLeftRef.current = 0;
+  const handleTouchStart = (minute, event) => {
+    const point = getEventClientPoint(event, event.currentTarget);
+    const container = timelineScrollRef.current;
+
+    clearTouchHold();
+    isTouchDraggingRef.current = false;
+    touchScrollIntentRef.current = false;
+    pendingTouchMinuteRef.current = minute;
+    touchStartXRef.current = point?.x ?? null;
+    touchStartYRef.current = point?.y ?? null;
+    touchStartScrollLeftRef.current = container?.scrollLeft || 0;
+
+    touchHoldTimerRef.current = setTimeout(() => {
+      if (touchScrollIntentRef.current) {
+        clearTouchHold();
+        return;
+      }
+
+      const heldMinute = pendingTouchMinuteRef.current;
+      if (heldMinute === null || heldMinute === undefined) {
+        clearTouchHold();
+        return;
+      }
+
+      startSelection({
+        minute: heldMinute,
+        point: {
+          x: touchStartXRef.current,
+          y: touchStartYRef.current,
+        },
+        isTouch: true,
+      });
+      clearTouchHold();
+    }, TOUCH_HOLD_TO_SELECT_MS);
+  };
+
+  const handleTouchMoveBeforeDrag = (event) => {
+    if (isDragging || !touchHoldTimerRef.current) return;
+
+    const point = getEventClientPoint(event);
+    if (!point) return;
+
+    const movedX = Number.isFinite(touchStartXRef.current)
+      ? Math.abs(point.x - touchStartXRef.current)
+      : 0;
+    const movedY = Number.isFinite(touchStartYRef.current)
+      ? Math.abs(point.y - touchStartYRef.current)
+      : 0;
+    const container = timelineScrollRef.current;
+    const movedScroll = container
+      ? Math.abs((container.scrollLeft || 0) - touchStartScrollLeftRef.current)
+      : 0;
+
+    if (movedX > TOUCH_SCROLL_CANCEL_THRESHOLD || movedY > TOUCH_SCROLL_CANCEL_THRESHOLD || movedScroll > TOUCH_SCROLL_CANCEL_THRESHOLD) {
+      touchScrollIntentRef.current = true;
+      clearTouchHold();
     }
   };
 
@@ -604,6 +673,7 @@ const ClassCalendarPanel = ({
   };
 
   const handleMouseUp = (event) => {
+    clearTouchHold();
     stopAutoScroll();
 
     const cancelledByTouchScroll = touchScrollIntentRef.current;
@@ -949,6 +1019,7 @@ const ClassCalendarPanel = ({
       }`}
       onMouseUp={handleMouseUp}
       onTouchEnd={handleMouseUp}
+      onTouchMove={handleTouchMoveBeforeDrag}
     >
       <style>
         {`@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap');
@@ -1178,7 +1249,7 @@ const ClassCalendarPanel = ({
                         type="button"
                         ref={(node) => setMinuteButtonRef(minute, node)}
                         onMouseDown={(event) => handleMouseDown(minute, event)}
-                        onTouchStart={(event) => handleMouseDown(minute, event)}
+                        onTouchStart={(event) => handleTouchStart(minute, event)}
                         onMouseEnter={() => handleMouseEnter(minute)}
                         onClick={(event) => slot && handleOpenExisting(slot, event, minute)}
                         className={`w-9 h-56 rounded-full transition-all duration-200 cursor-pointer ${
