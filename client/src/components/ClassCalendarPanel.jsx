@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   AlertCircle,
   ArrowLeft,
@@ -32,6 +33,8 @@ const POPUP_MARGIN = 14;
 const POPUP_FALLBACK_WIDTH = 360;
 const POPUP_FALLBACK_HEIGHT = 360;
 const AVAILABLE_RETURN_ANIMATION_MS = 520;
+const MOBILE_POPOVER_BREAKPOINT = 900;
+const TOUCH_SCROLL_CANCEL_THRESHOLD = 12;
 
 const toIsoDate = (value) => {
   if (!value) return '';
@@ -162,6 +165,7 @@ const ClassCalendarPanel = ({
   const [activePopover, setActivePopover] = useState(null);
   const [isClosingPopover, setIsClosingPopover] = useState(false);
   const [popoverCoords, setPopoverCoords] = useState({ top: 20, left: 20 });
+  const [isMobilePopover, setIsMobilePopover] = useState(false);
 
   const timelineScrollRef = useRef(null);
   const popoverRef = useRef(null);
@@ -169,6 +173,11 @@ const ClassCalendarPanel = ({
   const autoScrollRafRef = useRef(null);
   const autoScrollDirectionRef = useRef(0);
   const lastPointerXRef = useRef(null);
+  const isTouchDraggingRef = useRef(false);
+  const touchStartXRef = useRef(null);
+  const touchStartYRef = useRef(null);
+  const touchStartScrollLeftRef = useRef(0);
+  const touchScrollIntentRef = useRef(false);
   const popoverCloseTimerRef = useRef(null);
   const availableReturnTimerRef = useRef(null);
   const [returningToAvailableRange, setReturningToAvailableRange] = useState(null);
@@ -530,7 +539,12 @@ const ClassCalendarPanel = ({
   }, []);
 
   const handleMouseDown = (minute, event) => {
-    event.preventDefault();
+    const source = event?.nativeEvent || event;
+    const isTouchEvent = Boolean(source?.touches || source?.changedTouches || event?.type?.includes('touch'));
+    if (!isTouchEvent) {
+      event.preventDefault();
+    }
+
     setError('');
     setMessage('');
 
@@ -564,8 +578,24 @@ const ClassCalendarPanel = ({
     setIsDragging(true);
     setDragStart(minute);
     setDragEnd(minute);
+
     const point = getEventClientPoint(event, event.currentTarget);
     lastPointerXRef.current = Number.isFinite(point?.x) ? point.x : null;
+
+    if (isTouchEvent) {
+      const container = timelineScrollRef.current;
+      isTouchDraggingRef.current = true;
+      touchScrollIntentRef.current = false;
+      touchStartXRef.current = point?.x ?? null;
+      touchStartYRef.current = point?.y ?? null;
+      touchStartScrollLeftRef.current = container?.scrollLeft || 0;
+    } else {
+      isTouchDraggingRef.current = false;
+      touchScrollIntentRef.current = false;
+      touchStartXRef.current = null;
+      touchStartYRef.current = null;
+      touchStartScrollLeftRef.current = 0;
+    }
   };
 
   const handleMouseEnter = (minute) => {
@@ -575,6 +605,19 @@ const ClassCalendarPanel = ({
 
   const handleMouseUp = (event) => {
     stopAutoScroll();
+
+    const cancelledByTouchScroll = touchScrollIntentRef.current;
+    isTouchDraggingRef.current = false;
+    touchScrollIntentRef.current = false;
+    touchStartXRef.current = null;
+    touchStartYRef.current = null;
+    touchStartScrollLeftRef.current = 0;
+
+    if (cancelledByTouchScroll) {
+      resetSelection();
+      return;
+    }
+
     if (!isDragging || dragStart === null || dragEnd === null) return;
 
     const startMinute = Math.min(dragStart, dragEnd);
@@ -668,21 +711,33 @@ const ClassCalendarPanel = ({
       const point = getEventClientPoint(event);
       if (!point) return;
 
+      const container = timelineScrollRef.current;
+      if (isTouchDraggingRef.current && container) {
+        const startX = touchStartXRef.current;
+        const startY = touchStartYRef.current;
+        const movedX = Number.isFinite(startX) ? Math.abs(point.x - startX) : 0;
+        const movedY = Number.isFinite(startY) ? Math.abs(point.y - startY) : 0;
+        const movedScroll = Math.abs((container.scrollLeft || 0) - touchStartScrollLeftRef.current);
+        const horizontalIntent = movedX > movedY + 4;
+
+        if (
+          movedScroll > TOUCH_SCROLL_CANCEL_THRESHOLD ||
+          (movedX > TOUCH_SCROLL_CANCEL_THRESHOLD && horizontalIntent)
+        ) {
+          touchScrollIntentRef.current = true;
+          stopAutoScroll();
+          resetSelection();
+          return;
+        }
+      }
+
+      if (touchScrollIntentRef.current) return;
+
       lastPointerXRef.current = point.x;
       updateDragEndFromPointer(point.x);
 
-      const container = timelineScrollRef.current;
-      if (!container) return;
-
-      const rect = container.getBoundingClientRect();
-      const threshold = 46;
-      if (point.x > rect.right - threshold) {
-        startAutoScroll(1);
-      } else if (point.x < rect.left + threshold) {
-        startAutoScroll(-1);
-      } else {
-        stopAutoScroll();
-      }
+      // On touch devices, let the user control timeline movement with native scrolling.
+      stopAutoScroll();
     };
 
     const handleTouchEnd = () => {
@@ -741,9 +796,28 @@ const ClassCalendarPanel = ({
   const updatePopoverPosition = useCallback(() => {
     if (!activePopover) return;
 
-    const anchor = getAnchorGeometry();
     const width = popoverRef.current?.offsetWidth || POPUP_FALLBACK_WIDTH;
     const height = popoverRef.current?.offsetHeight || POPUP_FALLBACK_HEIGHT;
+
+    if (window.innerWidth <= MOBILE_POPOVER_BREAKPOINT) {
+      setIsMobilePopover(true);
+      const centeredLeft = clamp(
+        (window.innerWidth - width) / 2,
+        POPUP_MARGIN,
+        window.innerWidth - width - POPUP_MARGIN
+      );
+      const centeredTop = clamp(
+        (window.innerHeight - height) / 2,
+        POPUP_MARGIN,
+        window.innerHeight - height - POPUP_MARGIN
+      );
+      setPopoverCoords({ top: centeredTop, left: centeredLeft });
+      return;
+    }
+
+    setIsMobilePopover(false);
+
+    const anchor = getAnchorGeometry();
 
     const nextLeft = clamp(
       anchor.centerX - width / 2,
@@ -779,6 +853,12 @@ const ClassCalendarPanel = ({
       timelineScrollRef.current?.removeEventListener('scroll', onScroll);
     };
   }, [activePopover, updatePopoverPosition]);
+
+  useEffect(() => {
+    if (!activePopover) {
+      setIsMobilePopover(false);
+    }
+  }, [activePopover]);
 
   const handleSaveNewBlock = async () => {
     if (!activePopover) return;
@@ -1156,17 +1236,26 @@ const ClassCalendarPanel = ({
         </section>
       </div>
 
-      {activePopover && (
+      {activePopover && createPortal(
         <div
-          ref={popoverRef}
-          className="fixed z-[130] w-[min(92vw,360px)]"
-          style={{
-            top: `${popoverCoords.top}px`,
-            left: `${popoverCoords.left}px`,
-            animation: `${isClosingPopover ? 'popOut' : 'popIn'} 170ms ease forwards`,
-          }}
+          className={`fixed inset-0 z-[130] ${isMobilePopover ? 'flex items-center justify-center px-3' : 'pointer-events-none'}`}
         >
-          <div className="bg-white border border-slate-100 shadow-[0_30px_60px_rgba(0,0,0,0.25)] rounded-[2.2rem] p-6">
+          <div
+            ref={popoverRef}
+            className={`w-[min(92vw,360px)] ${isMobilePopover ? 'pointer-events-auto' : 'fixed'}`}
+            style={
+              isMobilePopover
+                ? {
+                    animation: `${isClosingPopover ? 'popOut' : 'popIn'} 170ms ease forwards`,
+                  }
+                : {
+                    top: `${popoverCoords.top}px`,
+                    left: `${popoverCoords.left}px`,
+                    animation: `${isClosingPopover ? 'popOut' : 'popIn'} 170ms ease forwards`,
+                  }
+            }
+          >
+            <div className="bg-white border border-slate-100 shadow-[0_30px_60px_rgba(0,0,0,0.25)] rounded-[2.2rem] p-6 pointer-events-auto">
             <div className="flex items-center justify-between mb-5">
               <div className="p-2.5 bg-slate-50 text-slate-500 rounded-2xl">
                 <Clock size={18} />
@@ -1295,8 +1384,10 @@ const ClassCalendarPanel = ({
                 </div>
               </div>
             )}
+            </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       <footer className="py-4 sm:py-6 text-center text-gray-400 text-xs sm:text-sm border-t border-gray-100 bg-white/60">

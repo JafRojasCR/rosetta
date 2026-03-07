@@ -305,11 +305,17 @@ const sendMail = async ({ to, subject, html }) => {
   }
 
   const resolveFromEmail = () => {
+    const displayName = 'Rosetta';
     const candidate = String(emailFrom || emailUser || '').trim();
-    if (!candidate) return '';
+    if (!candidate) return displayName;
+
     const match = candidate.match(/<([^>]+)>/);
-    const address = match ? match[1].trim() : candidate;
-    return `Rosetta <${address}>`;
+    const rawAddress = match ? match[1].trim() : candidate;
+    const fallbackAddress = emailUser.trim();
+    const address = rawAddress.includes('@') ? rawAddress : fallbackAddress;
+
+    if (!address) return displayName;
+    return `${displayName} <${address}>`;
   };
 
   const mailPayload = {
