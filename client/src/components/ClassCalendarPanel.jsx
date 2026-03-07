@@ -34,8 +34,6 @@ const POPUP_FALLBACK_WIDTH = 360;
 const POPUP_FALLBACK_HEIGHT = 360;
 const AVAILABLE_RETURN_ANIMATION_MS = 520;
 const MOBILE_POPOVER_BREAKPOINT = 900;
-const TOUCH_SCROLL_CANCEL_THRESHOLD = 12;
-const TOUCH_HOLD_TO_SELECT_MS = 500;
 const AUTO_SCROLL_STEP_PX = 8;
 
 const toIsoDate = (value) => {
@@ -176,12 +174,13 @@ const ClassCalendarPanel = ({
   const autoScrollDirectionRef = useRef(0);
   const lastPointerXRef = useRef(null);
   const isTouchDraggingRef = useRef(false);
-  const touchHoldTimerRef = useRef(null);
-  const pendingTouchMinuteRef = useRef(null);
   const touchStartXRef = useRef(null);
   const touchStartYRef = useRef(null);
   const touchStartScrollLeftRef = useRef(0);
   const touchScrollIntentRef = useRef(false);
+  const timelineTouchStartXRef = useRef(null);
+  const timelineTouchStartScrollLeftRef = useRef(0);
+  const timelineTouchScrollingRef = useRef(false);
   const popoverCloseTimerRef = useRef(null);
   const availableReturnTimerRef = useRef(null);
   const [returningToAvailableRange, setReturningToAvailableRange] = useState(null);
@@ -249,9 +248,6 @@ const ClassCalendarPanel = ({
       }
       if (popoverCloseTimerRef.current) {
         clearTimeout(popoverCloseTimerRef.current);
-      }
-      if (touchHoldTimerRef.current) {
-        clearTimeout(touchHoldTimerRef.current);
       }
       if (availableReturnTimerRef.current) {
         clearTimeout(availableReturnTimerRef.current);
@@ -509,63 +505,6 @@ const ClassCalendarPanel = ({
     setDragEnd(null);
   }, [stopAutoScroll]);
 
-  const clearTouchHold = useCallback(() => {
-    if (touchHoldTimerRef.current) {
-      clearTimeout(touchHoldTimerRef.current);
-      touchHoldTimerRef.current = null;
-    }
-    pendingTouchMinuteRef.current = null;
-  }, []);
-
-  const canStartSelectionAtMinute = useCallback(
-    (minute) => {
-      if (isAdmin) {
-        const occupied = daySlots.some(
-          (slot) => minute >= slot.startMinute && minute < slot.endMinute
-        );
-        return !occupied;
-      }
-
-      const insideAvailable = daySlots.some(
-        (slot) =>
-          slot.status === 'available' &&
-          minute >= slot.startMinute &&
-          minute < slot.endMinute
-      );
-      if (!insideAvailable) return false;
-
-      const blocked = daySlots.some(
-        (slot) =>
-          (slot.status === 'pending' || slot.status === 'booked') &&
-          minute >= slot.startMinute &&
-          minute < slot.endMinute
-      );
-      return !blocked;
-    },
-    [daySlots, isAdmin]
-  );
-
-  const startSelection = useCallback(
-    ({ minute, point = null, isTouch = false }) => {
-      if (!canStartSelectionAtMinute(minute)) return false;
-
-      setError('');
-      setMessage('');
-
-      if (activePopover) {
-        closePopover();
-      }
-
-      setIsDragging(true);
-      setDragStart(minute);
-      setDragEnd(minute);
-      lastPointerXRef.current = Number.isFinite(point?.x) ? point.x : null;
-      isTouchDraggingRef.current = isTouch;
-      return true;
-    },
-    [activePopover, canStartSelectionAtMinute, closePopover]
-  );
-
   const openPopover = useCallback(
     (nextPopover) => {
       if (popoverCloseTimerRef.current) {
@@ -603,68 +542,94 @@ const ClassCalendarPanel = ({
   }, []);
 
   const handleMouseDown = (minute, event) => {
-    event.preventDefault();
-    const point = getEventClientPoint(event, event.currentTarget);
-    startSelection({ minute, point, isTouch: false });
-  };
-
-  const handleTouchStart = (minute, event) => {
-    const point = getEventClientPoint(event, event.currentTarget);
-    const container = timelineScrollRef.current;
-
-    clearTouchHold();
-    isTouchDraggingRef.current = false;
-    touchScrollIntentRef.current = false;
-    pendingTouchMinuteRef.current = minute;
-    touchStartXRef.current = point?.x ?? null;
-    touchStartYRef.current = point?.y ?? null;
-    touchStartScrollLeftRef.current = container?.scrollLeft || 0;
-
-    touchHoldTimerRef.current = setTimeout(() => {
-      if (touchScrollIntentRef.current) {
-        clearTouchHold();
-        return;
-      }
-
-      const heldMinute = pendingTouchMinuteRef.current;
-      if (heldMinute === null || heldMinute === undefined) {
-        clearTouchHold();
-        return;
-      }
-
-      startSelection({
-        minute: heldMinute,
-        point: {
-          x: touchStartXRef.current,
-          y: touchStartYRef.current,
-        },
-        isTouch: true,
-      });
-      clearTouchHold();
-    }, TOUCH_HOLD_TO_SELECT_MS);
-  };
-
-  const handleTouchMoveBeforeDrag = (event) => {
-    if (isDragging || !touchHoldTimerRef.current) return;
-
-    const point = getEventClientPoint(event);
-    if (!point) return;
-
-    const movedX = Number.isFinite(touchStartXRef.current)
-      ? Math.abs(point.x - touchStartXRef.current)
-      : 0;
-    const movedY = Number.isFinite(touchStartYRef.current)
-      ? Math.abs(point.y - touchStartYRef.current)
-      : 0;
-    const container = timelineScrollRef.current;
-    const movedScroll = container
-      ? Math.abs((container.scrollLeft || 0) - touchStartScrollLeftRef.current)
-      : 0;
-
-    if (movedX > TOUCH_SCROLL_CANCEL_THRESHOLD || movedY > TOUCH_SCROLL_CANCEL_THRESHOLD || movedScroll > TOUCH_SCROLL_CANCEL_THRESHOLD) {
-      touchScrollIntentRef.current = true;
-      clearTouchHold();
+    const source = event?.nativeEvent || event;
+    const isTouchEvent = Boolean(source?.touches || source?.changedTouches || event?.type?.includes('touch'));
+    if (!isTouchEvent) {
+      event.preventDefault();
     }
+
+    setError('');
+    setMessage('');
+
+    if (activePopover) {
+      closePopover();
+    }
+
+    if (isAdmin) {
+      const occupied = daySlots.some(
+        (slot) => minute >= slot.startMinute && minute < slot.endMinute
+      );
+      if (occupied) return;
+    } else {
+      const insideAvailable = daySlots.some(
+        (slot) =>
+          slot.status === 'available' &&
+          minute >= slot.startMinute &&
+          minute < slot.endMinute
+      );
+      if (!insideAvailable) return;
+
+      const blocked = daySlots.some(
+        (slot) =>
+          (slot.status === 'pending' || slot.status === 'booked') &&
+          minute >= slot.startMinute &&
+          minute < slot.endMinute
+      );
+      if (blocked) return;
+    }
+
+    setIsDragging(true);
+    setDragStart(minute);
+    setDragEnd(minute);
+
+    const point = getEventClientPoint(event, event.currentTarget);
+    lastPointerXRef.current = Number.isFinite(point?.x) ? point.x : null;
+
+    if (isTouchEvent) {
+      const container = timelineScrollRef.current;
+      isTouchDraggingRef.current = true;
+      touchScrollIntentRef.current = false;
+      touchStartXRef.current = point?.x ?? null;
+      touchStartYRef.current = point?.y ?? null;
+      touchStartScrollLeftRef.current = container?.scrollLeft || 0;
+    } else {
+      isTouchDraggingRef.current = false;
+      touchScrollIntentRef.current = false;
+      touchStartXRef.current = null;
+      touchStartYRef.current = null;
+      touchStartScrollLeftRef.current = 0;
+    }
+  };
+
+  const handleTimelineTouchStart = (event) => {
+    if (window.innerWidth > MOBILE_POPOVER_BREAKPOINT || isDragging) return;
+
+    const target = event.target;
+    if (target instanceof Element && target.closest('[data-time-bar="true"]')) return;
+
+    const touch = event.touches?.[0];
+    if (!touch) return;
+
+    timelineTouchScrollingRef.current = true;
+    timelineTouchStartXRef.current = touch.clientX;
+    timelineTouchStartScrollLeftRef.current = timelineScrollRef.current?.scrollLeft || 0;
+  };
+
+  const handleTimelineTouchMove = (event) => {
+    if (!timelineTouchScrollingRef.current) return;
+    if (window.innerWidth > MOBILE_POPOVER_BREAKPOINT) return;
+
+    const touch = event.touches?.[0];
+    if (!touch || !timelineScrollRef.current || !Number.isFinite(timelineTouchStartXRef.current)) return;
+
+    const deltaX = touch.clientX - timelineTouchStartXRef.current;
+    timelineScrollRef.current.scrollLeft = timelineTouchStartScrollLeftRef.current - deltaX;
+    event.preventDefault();
+  };
+
+  const handleTimelineTouchEnd = () => {
+    timelineTouchScrollingRef.current = false;
+    timelineTouchStartXRef.current = null;
   };
 
   const handleMouseEnter = (minute) => {
@@ -672,8 +637,32 @@ const ClassCalendarPanel = ({
     setDragEnd(minute);
   };
 
+  const handleBarTouchMove = (event) => {
+    if (!isDragging) return;
+
+    const point = getEventClientPoint(event);
+    if (!point) return;
+
+    lastPointerXRef.current = point.x;
+    updateDragEndFromPointer(point.x);
+
+    const container = timelineScrollRef.current;
+    if (!container) return;
+
+    const rect = container.getBoundingClientRect();
+    const threshold = 46;
+    if (point.x > rect.right - threshold) {
+      startAutoScroll(1);
+    } else if (point.x < rect.left + threshold) {
+      startAutoScroll(-1);
+    } else {
+      stopAutoScroll();
+    }
+
+    event.preventDefault();
+  };
+
   const handleMouseUp = (event) => {
-    clearTouchHold();
     stopAutoScroll();
 
     const cancelledByTouchScroll = touchScrollIntentRef.current;
@@ -781,33 +770,21 @@ const ClassCalendarPanel = ({
       const point = getEventClientPoint(event);
       if (!point) return;
 
-      const container = timelineScrollRef.current;
-      if (isTouchDraggingRef.current && container) {
-        const startX = touchStartXRef.current;
-        const startY = touchStartYRef.current;
-        const movedX = Number.isFinite(startX) ? Math.abs(point.x - startX) : 0;
-        const movedY = Number.isFinite(startY) ? Math.abs(point.y - startY) : 0;
-        const movedScroll = Math.abs((container.scrollLeft || 0) - touchStartScrollLeftRef.current);
-        const horizontalIntent = movedX > movedY + 4;
-
-        if (
-          movedScroll > TOUCH_SCROLL_CANCEL_THRESHOLD ||
-          (movedX > TOUCH_SCROLL_CANCEL_THRESHOLD && horizontalIntent)
-        ) {
-          touchScrollIntentRef.current = true;
-          stopAutoScroll();
-          resetSelection();
-          return;
-        }
-      }
-
-      if (touchScrollIntentRef.current) return;
-
       lastPointerXRef.current = point.x;
       updateDragEndFromPointer(point.x);
 
-      // On touch devices, let the user control timeline movement with native scrolling.
-      stopAutoScroll();
+      const container = timelineScrollRef.current;
+      if (!container) return;
+
+      const rect = container.getBoundingClientRect();
+      const threshold = 46;
+      if (point.x > rect.right - threshold) {
+        startAutoScroll(1);
+      } else if (point.x < rect.left + threshold) {
+        startAutoScroll(-1);
+      } else {
+        stopAutoScroll();
+      }
     };
 
     const handleTouchEnd = () => {
@@ -1019,7 +996,6 @@ const ClassCalendarPanel = ({
       }`}
       onMouseUp={handleMouseUp}
       onTouchEnd={handleMouseUp}
-      onTouchMove={handleTouchMoveBeforeDrag}
     >
       <style>
         {`@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap');
@@ -1204,6 +1180,9 @@ const ClassCalendarPanel = ({
               isMonthTransitioning ? 'opacity-45 translate-y-1' : 'opacity-100 translate-y-0'
             }`}
             ref={timelineScrollRef}
+            onTouchStart={handleTimelineTouchStart}
+            onTouchMove={handleTimelineTouchMove}
+            onTouchEnd={handleTimelineTouchEnd}
           >
             <div className="p-8 min-w-max">
               <div className="mb-6 flex items-center justify-between gap-3">
@@ -1249,9 +1228,11 @@ const ClassCalendarPanel = ({
                         type="button"
                         ref={(node) => setMinuteButtonRef(minute, node)}
                         onMouseDown={(event) => handleMouseDown(minute, event)}
-                        onTouchStart={(event) => handleTouchStart(minute, event)}
+                        onTouchStart={(event) => handleMouseDown(minute, event)}
+                        onTouchMove={handleBarTouchMove}
                         onMouseEnter={() => handleMouseEnter(minute)}
                         onClick={(event) => slot && handleOpenExisting(slot, event, minute)}
+                        data-time-bar="true"
                         className={`w-9 h-56 rounded-full transition-all duration-200 cursor-pointer ${
                           shouldPaintStudentGreen
                             ? 'bg-emerald-100 border-[3px] border-emerald-500 border-dashed ring-[5px] ring-emerald-200/60'
