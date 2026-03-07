@@ -35,6 +35,7 @@ const POPUP_FALLBACK_HEIGHT = 360;
 const AVAILABLE_RETURN_ANIMATION_MS = 520;
 const MOBILE_POPOVER_BREAKPOINT = 900;
 const AUTO_SCROLL_STEP_PX = 8;
+const TOUCH_SELECTION_DELAY_MS = 30;
 
 const toIsoDate = (value) => {
   if (!value) return '';
@@ -178,6 +179,8 @@ const ClassCalendarPanel = ({
   const touchStartYRef = useRef(null);
   const touchStartScrollLeftRef = useRef(0);
   const touchScrollIntentRef = useRef(false);
+  const touchSelectionDelayTimerRef = useRef(null);
+  const pendingTouchSelectionRef = useRef(null);
   const timelineTouchStartXRef = useRef(null);
   const timelineTouchStartScrollLeftRef = useRef(0);
   const timelineTouchScrollingRef = useRef(false);
@@ -248,6 +251,9 @@ const ClassCalendarPanel = ({
       }
       if (popoverCloseTimerRef.current) {
         clearTimeout(popoverCloseTimerRef.current);
+      }
+      if (touchSelectionDelayTimerRef.current) {
+        clearTimeout(touchSelectionDelayTimerRef.current);
       }
       if (availableReturnTimerRef.current) {
         clearTimeout(availableReturnTimerRef.current);
@@ -541,64 +547,95 @@ const ClassCalendarPanel = ({
     }, AVAILABLE_RETURN_ANIMATION_MS);
   }, []);
 
+  const clearPendingTouchSelection = useCallback(() => {
+    if (touchSelectionDelayTimerRef.current) {
+      clearTimeout(touchSelectionDelayTimerRef.current);
+      touchSelectionDelayTimerRef.current = null;
+    }
+    pendingTouchSelectionRef.current = null;
+  }, []);
+
+  const beginSelection = useCallback(
+    ({ minute, point, isTouch }) => {
+      if (typeof minute !== 'number') return false;
+
+      setError('');
+      setMessage('');
+
+      if (activePopover) {
+        closePopover();
+      }
+
+      if (isAdmin) {
+        const occupied = daySlots.some(
+          (slot) => minute >= slot.startMinute && minute < slot.endMinute
+        );
+        if (occupied) return false;
+      } else {
+        const insideAvailable = daySlots.some(
+          (slot) =>
+            slot.status === 'available' &&
+            minute >= slot.startMinute &&
+            minute < slot.endMinute
+        );
+        if (!insideAvailable) return false;
+
+        const blocked = daySlots.some(
+          (slot) =>
+            (slot.status === 'pending' || slot.status === 'booked') &&
+            minute >= slot.startMinute &&
+            minute < slot.endMinute
+        );
+        if (blocked) return false;
+      }
+
+      setIsDragging(true);
+      setDragStart(minute);
+      setDragEnd(minute);
+      lastPointerXRef.current = Number.isFinite(point?.x) ? point.x : null;
+
+      if (isTouch) {
+        const container = timelineScrollRef.current;
+        isTouchDraggingRef.current = true;
+        touchScrollIntentRef.current = false;
+        touchStartXRef.current = point?.x ?? null;
+        touchStartYRef.current = point?.y ?? null;
+        touchStartScrollLeftRef.current = container?.scrollLeft || 0;
+      } else {
+        isTouchDraggingRef.current = false;
+        touchScrollIntentRef.current = false;
+        touchStartXRef.current = null;
+        touchStartYRef.current = null;
+        touchStartScrollLeftRef.current = 0;
+      }
+
+      return true;
+    },
+    [activePopover, closePopover, daySlots, isAdmin]
+  );
+
   const handleMouseDown = (minute, event) => {
-    const source = event?.nativeEvent || event;
-    const isTouchEvent = Boolean(source?.touches || source?.changedTouches || event?.type?.includes('touch'));
-    if (!isTouchEvent) {
-      event.preventDefault();
-    }
-
-    setError('');
-    setMessage('');
-
-    if (activePopover) {
-      closePopover();
-    }
-
-    if (isAdmin) {
-      const occupied = daySlots.some(
-        (slot) => minute >= slot.startMinute && minute < slot.endMinute
-      );
-      if (occupied) return;
-    } else {
-      const insideAvailable = daySlots.some(
-        (slot) =>
-          slot.status === 'available' &&
-          minute >= slot.startMinute &&
-          minute < slot.endMinute
-      );
-      if (!insideAvailable) return;
-
-      const blocked = daySlots.some(
-        (slot) =>
-          (slot.status === 'pending' || slot.status === 'booked') &&
-          minute >= slot.startMinute &&
-          minute < slot.endMinute
-      );
-      if (blocked) return;
-    }
-
-    setIsDragging(true);
-    setDragStart(minute);
-    setDragEnd(minute);
-
+    event.preventDefault();
     const point = getEventClientPoint(event, event.currentTarget);
-    lastPointerXRef.current = Number.isFinite(point?.x) ? point.x : null;
+    beginSelection({ minute, point, isTouch: false });
+  };
 
-    if (isTouchEvent) {
-      const container = timelineScrollRef.current;
-      isTouchDraggingRef.current = true;
-      touchScrollIntentRef.current = false;
-      touchStartXRef.current = point?.x ?? null;
-      touchStartYRef.current = point?.y ?? null;
-      touchStartScrollLeftRef.current = container?.scrollLeft || 0;
-    } else {
-      isTouchDraggingRef.current = false;
-      touchScrollIntentRef.current = false;
-      touchStartXRef.current = null;
-      touchStartYRef.current = null;
-      touchStartScrollLeftRef.current = 0;
-    }
+  const handleBarTouchStart = (minute, event) => {
+    const point = getEventClientPoint(event, event.currentTarget);
+    clearPendingTouchSelection();
+    pendingTouchSelectionRef.current = { minute, point };
+
+    touchSelectionDelayTimerRef.current = setTimeout(() => {
+      const pending = pendingTouchSelectionRef.current;
+      if (!pending) return;
+
+      beginSelection({
+        minute: pending.minute,
+        point: pending.point,
+        isTouch: true,
+      });
+      clearPendingTouchSelection();
+    }, TOUCH_SELECTION_DELAY_MS);
   };
 
   const handleTimelineTouchStart = (event) => {
@@ -663,6 +700,7 @@ const ClassCalendarPanel = ({
   };
 
   const handleMouseUp = (event) => {
+    clearPendingTouchSelection();
     stopAutoScroll();
 
     const cancelledByTouchScroll = touchScrollIntentRef.current;
@@ -1192,7 +1230,7 @@ const ClassCalendarPanel = ({
                 </div>
               </div>
 
-              <div className="flex gap-3 items-end h-[310px] pb-10">
+              <div className="flex gap-3 items-end h-[310px] pb-20">
                 {allTimeSlots.map((minute) => {
                   const slot = slotByMinute.get(minute) || null;
                   const isPopoverActive = activePopover?.slot?.id === slot?.id;
@@ -1216,19 +1254,21 @@ const ClassCalendarPanel = ({
 
                   return (
                     <div key={minute} className="relative flex flex-col items-center">
-                      <span
-                        className={`absolute -bottom-9 text-[11px] font-bold ${
+                      <div
+                        className={`absolute -bottom-[4.2rem] flex flex-col items-center leading-none ${
                           minute % 60 === 0 ? 'text-slate-500' : 'text-slate-300'
                         }`}
                       >
-                        {minuteToTime(minute)}
-                      </span>
+                        <span className="text-[10px] font-bold">{minuteToTime(minute)}</span>
+                        <span className="text-[9px] font-black my-0.5">a</span>
+                        <span className="text-[10px] font-bold">{minuteToTime(minute + 30)}</span>
+                      </div>
 
                       <button
                         type="button"
                         ref={(node) => setMinuteButtonRef(minute, node)}
                         onMouseDown={(event) => handleMouseDown(minute, event)}
-                        onTouchStart={(event) => handleMouseDown(minute, event)}
+                        onTouchStart={(event) => handleBarTouchStart(minute, event)}
                         onTouchMove={handleBarTouchMove}
                         onMouseEnter={() => handleMouseEnter(minute)}
                         onClick={(event) => slot && handleOpenExisting(slot, event, minute)}

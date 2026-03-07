@@ -665,7 +665,7 @@ const AdminClassesPage = () => {
         </div>
       </nav>
 
-      <main className="max-w-7xl w-full mx-auto px-4 sm:px-6 py-10 grid lg:grid-cols-12 gap-8 flex-1">
+      <main className="max-w-7xl w-full mx-auto px-4 sm:px-6 py-10 pb-28 sm:pb-32 grid lg:grid-cols-12 gap-8 flex-1">
         <section className="lg:col-span-7">
           <div className="bg-white rounded-[2.5rem] p-8 sm:p-10 shadow-sm border border-gray-100">
             <div className="flex items-center gap-4 mb-8">
@@ -1129,18 +1129,17 @@ const AdminClassesPage = () => {
             </div>
           )}
 
-          <div className="pt-2 flex justify-end">
-            <button
-              type="button"
-              onClick={() => navigate('/admin/calendario')}
-              className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-slate-900 text-white font-black text-xs uppercase tracking-wider hover:bg-slate-800 transition-colors shadow-lg"
-            >
-              <CalendarDays size={16} />
-              Abrir calendario
-            </button>
-          </div>
         </section>
       </main>
+
+      <button
+        type="button"
+        onClick={() => navigate('/admin/calendario')}
+        className="fixed bottom-5 right-4 sm:bottom-7 sm:right-7 z-40 inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-slate-900 text-white font-black text-xs uppercase tracking-wider hover:bg-slate-800 transition-colors shadow-[0_18px_40px_rgba(15,23,42,0.35)]"
+      >
+        <CalendarDays size={16} />
+        Abrir calendario
+      </button>
 
       <footer className="py-4 sm:py-6 text-center text-gray-400 text-xs sm:text-sm border-t border-gray-100 bg-white/60">
         © 2026 Rosetta - Plataforma de Aula Virtual

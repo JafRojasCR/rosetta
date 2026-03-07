@@ -376,7 +376,7 @@ const ClassesPage = () => {
       )}
 
       <main
-        className={`max-w-5xl w-full mx-auto px-4 sm:px-6 py-8 space-y-4 transition-all duration-500 ${
+        className={`max-w-5xl w-full mx-auto px-4 sm:px-6 py-8 pb-28 sm:pb-32 space-y-4 transition-all duration-500 ${
           isAnimating ? 'opacity-50 scale-[0.99] grayscale-[0.2]' : 'opacity-100 scale-100'
         }`}
       >
@@ -546,17 +546,16 @@ const ClassesPage = () => {
           ))
         )}
 
-        <div className="pt-2 flex justify-end">
-          <button
-            type="button"
-            onClick={() => navigate('/calendario')}
-            className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-slate-900 text-white font-black text-xs uppercase tracking-wider hover:bg-slate-800 transition-colors shadow-lg"
-          >
-            <CalendarDays size={16} />
-            Abrir calendario
-          </button>
-        </div>
       </main>
+
+      <button
+        type="button"
+        onClick={() => navigate('/calendario')}
+        className="fixed bottom-5 right-4 sm:bottom-7 sm:right-7 z-40 inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-slate-900 text-white font-black text-xs uppercase tracking-wider hover:bg-slate-800 transition-colors shadow-[0_18px_40px_rgba(15,23,42,0.35)]"
+      >
+        <CalendarDays size={16} />
+        Abrir calendario
+      </button>
 
       <footer className="py-4 sm:py-6 text-center text-gray-400 text-xs sm:text-sm border-t border-gray-100 bg-white/60 mt-auto">
         © 2026 Rosetta - Plataforma de Aula Virtual
