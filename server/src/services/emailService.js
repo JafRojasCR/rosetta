@@ -309,7 +309,7 @@ const sendMail = async ({ to, subject, html }) => {
     if (!candidate) return '';
     const match = candidate.match(/<([^>]+)>/);
     const address = match ? match[1].trim() : candidate;
-    return `<${address}>`;
+    return `Rosetta <${address}>`;
   };
 
   const mailPayload = {
