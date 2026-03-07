@@ -285,6 +285,33 @@ export const AuthProvider = ({ children }) => {
     setUser(updatedUser);
   };
 
+  const fetchCalendarSlots = useCallback(async ({ from, to }) => {
+    const response = await api.get('/classes/calendar/slots', {
+      params: { from, to },
+    });
+    return response.data?.data || [];
+  }, []);
+
+  const createCalendarAvailability = useCallback(async (payload) => {
+    const response = await api.post('/classes/calendar/availability', payload);
+    return response.data?.data || null;
+  }, []);
+
+  const reserveCalendarSlot = useCallback(async (payload) => {
+    const response = await api.post('/classes/calendar/reservations', payload);
+    return response.data?.data || null;
+  }, []);
+
+  const approveCalendarSlot = useCallback(async (slotId) => {
+    const response = await api.patch(`/classes/calendar/slots/${slotId}/approve`);
+    return response.data?.data || null;
+  }, []);
+
+  const deleteCalendarSlot = useCallback(async (slotId) => {
+    const response = await api.delete(`/classes/calendar/slots/${slotId}`);
+    return response.data?.data || null;
+  }, []);
+
   return (
     <AuthContext.Provider
       value={{
@@ -298,6 +325,11 @@ export const AuthProvider = ({ children }) => {
         register,
         logout,
         updateUser,
+        fetchCalendarSlots,
+        createCalendarAvailability,
+        reserveCalendarSlot,
+        approveCalendarSlot,
+        deleteCalendarSlot,
       }}
     >
       {!loading && children}

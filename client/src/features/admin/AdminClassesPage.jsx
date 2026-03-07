@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   BookOpen,
   Calendar,
+  CalendarDays,
   ChevronLeft,
   ChevronRight,
   Edit3,
@@ -646,7 +647,7 @@ const AdminClassesPage = () => {
       <nav className="bg-white px-4 sm:px-8 py-4 flex items-center justify-between gap-3 shadow-sm">
         <div className="flex items-center gap-4">
           <button
-            onClick={() => navigate(-1)}
+            onClick={() => navigate('/admin/dashboard')}
             className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-600"
             type="button"
           >
@@ -1127,6 +1128,17 @@ const AdminClassesPage = () => {
               ))}
             </div>
           )}
+
+          <div className="pt-2 flex justify-end">
+            <button
+              type="button"
+              onClick={() => navigate('/admin/clases/calendario')}
+              className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-slate-900 text-white font-black text-xs uppercase tracking-wider hover:bg-slate-800 transition-colors shadow-lg"
+            >
+              <CalendarDays size={16} />
+              Abrir calendario
+            </button>
+          </div>
         </section>
       </main>
 

@@ -10,12 +10,14 @@ import ForgotPasswordPage from '../features/auth/ForgotPasswordPage';
 import RecoverPasswordPage from '../features/auth/RecoverPasswordPage';
 import DashboardPage from '../features/dashboard/DashboardPage';
 import ClassesPage from '../features/classes/ClassesPage';
+import StudentCalendarPage from '../features/classes/StudentCalendarPage';
 import ClassDetailPage from '../features/classes/ClassDetailPage';
 import PaymentsPage from '../features/payments/PaymentsPage';
 import PaymentFormPage from '../features/payments/PaymentFormPage';
 import DocumentsPage from '../features/documents/DocumentsPage';
 import AdminDocumentsPage from '../features/documents/AdminDocumentsPage';
 import AdminClassesPage from '../features/admin/AdminClassesPage';
+import AdminCalendarPage from '../features/admin/AdminCalendarPage';
 import AdminPaymentsPage from '../features/admin/AdminPaymentsPage';
 import AdminUsersPage from '../features/admin/AdminUsersPage';
 import AdminSubjectsPage from '../features/admin/AdminSubjectsPage';
@@ -88,6 +90,14 @@ const AppRouter = () => {
         }
       />
       <Route
+        path="/clases/calendario"
+        element={
+          <ProtectedRoute requiredRole="student">
+            <StudentCalendarPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path="/clases/:classCode"
         element={
           <ProtectedRoute>
@@ -140,6 +150,14 @@ const AppRouter = () => {
         element={
           <ProtectedRoute requiredRole="admin">
             <AdminClassesPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/clases/calendario"
+        element={
+          <ProtectedRoute requiredRole="admin">
+            <AdminCalendarPage />
           </ProtectedRoute>
         }
       />

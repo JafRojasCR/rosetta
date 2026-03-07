@@ -5,6 +5,7 @@ import {
   ArrowUp,
   BookOpen,
   Calendar,
+  CalendarDays,
   ChevronDown,
   Lock,
   Search,
@@ -544,6 +545,17 @@ const ClassesPage = () => {
             </div>
           ))
         )}
+
+        <div className="pt-2 flex justify-end">
+          <button
+            type="button"
+            onClick={() => navigate('/clases/calendario')}
+            className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-slate-900 text-white font-black text-xs uppercase tracking-wider hover:bg-slate-800 transition-colors shadow-lg"
+          >
+            <CalendarDays size={16} />
+            Abrir calendario
+          </button>
+        </div>
       </main>
 
       <footer className="py-4 sm:py-6 text-center text-gray-400 text-xs sm:text-sm border-t border-gray-100 bg-white/60 mt-auto">

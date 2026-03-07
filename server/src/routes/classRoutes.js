@@ -17,10 +17,22 @@ const {
   getClassCanvaAccessUrl,
   setClassVote,
 } = require('../controllers/classController');
+const {
+  listCalendarSlots,
+  createAvailabilitySlot,
+  reserveSlot,
+  approvePendingSlot,
+  deleteSlot,
+} = require('../controllers/classCalendarController');
 const { protect, adminOnly, optionalAuth, studentOnly } = require('../middlewares/authMiddleware');
 const uploadClassFiles = require('../middlewares/uploadClassFiles');
 
 router.get('/', getClasses);
+router.get('/calendar/slots', protect, listCalendarSlots);
+router.post('/calendar/availability', protect, adminOnly, createAvailabilitySlot);
+router.post('/calendar/reservations', protect, studentOnly, reserveSlot);
+router.patch('/calendar/slots/:slotId/approve', protect, adminOnly, approvePendingSlot);
+router.delete('/calendar/slots/:slotId', protect, deleteSlot);
 router.post('/recording-upload/init', protect, adminOnly, initClassRecordingUpload);
 router.post('/recording-upload/complete', protect, adminOnly, completeClassRecordingUpload);
 router.put(

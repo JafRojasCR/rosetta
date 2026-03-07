@@ -304,8 +304,16 @@ const sendMail = async ({ to, subject, html }) => {
     throw new Error('Servicio de correo no configurado. Revisa variables EMAIL_* en .env');
   }
 
+  const resolveFromEmail = () => {
+    const candidate = String(emailFrom || emailUser || '').trim();
+    if (!candidate) return '';
+    const match = candidate.match(/<([^>]+)>/);
+    const address = match ? match[1].trim() : candidate;
+    return `Rosetta <${address}>`;
+  };
+
   const mailPayload = {
-    from: emailFrom || emailUser,
+    from: resolveFromEmail(),
     to,
     subject,
     html,
@@ -377,4 +385,107 @@ const sendPasswordResetLink = async (email, resetUrl) => {
   });
 };
 
-module.exports = { send2FACode, sendPasswordResetLink };
+const formatHourMinute = (minute = 0) => {
+  const hh = String(Math.floor(minute / 60)).padStart(2, '0');
+  const mm = String(minute % 60).padStart(2, '0');
+  return `${hh}:${mm}`;
+};
+
+const buildCalendarEmailShell = ({ title, subtitle, rows = [], accent = '#2563eb' }) => {
+  const rowsHtml = rows
+    .map(
+      (row) => `
+      <tr>
+        <td style="padding: 8px 0; color: #6b7280; font-weight: 700; width: 40%; text-align:left;">${row.label}</td>
+        <td style="padding: 8px 0; color: #111827; font-weight: 800; text-align:center;">${row.value}</td>
+      </tr>`
+    )
+    .join('');
+
+  return `<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>${title}</title>
+  </head>
+  <body style="margin:0;padding:24px;background:#f3f4f6;font-family:Segoe UI,Roboto,Arial,sans-serif;">
+    <table style="width:100%;max-width:560px;margin:0 auto;background:#fff;border-radius:24px;border:1px solid #e5e7eb;padding:26px;text-align:center;">
+      <tr>
+        <td>
+          <h1 style="margin:0;color:#111827;font-size:24px;line-height:1.2;text-align:center;">${title}</h1>
+          <p style="margin:10px 0 18px;color:#6b7280;font-size:14px;line-height:1.6;text-align:center;">${subtitle}</p>
+          <div style="height:3px;background:${accent};border-radius:999px;margin-bottom:16px;margin:0 auto;max-width:160px;"></div>
+          <table style="width:100%;border-collapse:collapse;text-align:center;margin-top:12px;">${rowsHtml}</table>
+          <p style="margin-top:22px;color:#9ca3af;font-size:12px;font-weight:700;">&copy; 2026 Rosetta</p>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+};
+
+const sendClassScheduleRequestEmail = async ({
+  to,
+  studentName,
+  studentEmail,
+  dateKey,
+  startMinute,
+  endMinute,
+}) => {
+  const html = buildCalendarEmailShell({
+    title: 'Nueva solicitud de clase',
+    subtitle: 'Un estudiante ha solicitado un horario para apartar clase.',
+    accent: '#f59e0b',
+    rows: [
+      { label: 'Solicita', value: studentName || '--' },
+      { label: 'Correo', value: studentEmail || '--' },
+      { label: 'Fecha', value: dateKey || '--' },
+      {
+        label: 'Horario',
+        value: `${formatHourMinute(startMinute)} - ${formatHourMinute(endMinute)}`,
+      },
+    ],
+  });
+
+  return sendMail({
+    to,
+    subject: 'Rosetta | Solicitud de clase pendiente',
+    html,
+  });
+};
+
+const sendClassScheduleApprovedEmail = async ({
+  to,
+  studentName,
+  dateKey,
+  startMinute,
+  endMinute,
+}) => {
+  const html = buildCalendarEmailShell({
+    title: 'Tu clase fue aprobada',
+    subtitle: `Hola ${studentName || 'estudiante'}, tu solicitud fue aprobada correctamente.`,
+    accent: '#10b981',
+    rows: [
+      { label: 'Fecha', value: dateKey || '--' },
+      {
+        label: 'Horario',
+        value: `${formatHourMinute(startMinute)} - ${formatHourMinute(endMinute)}`,
+      },
+      { label: 'Estado', value: 'Reservado' },
+    ],
+  });
+
+  return sendMail({
+    to,
+    subject: 'Rosetta | Clase confirmada',
+    html,
+  });
+};
+
+module.exports = {
+  send2FACode,
+  sendPasswordResetLink,
+  sendClassScheduleRequestEmail,
+  sendClassScheduleApprovedEmail,
+};
