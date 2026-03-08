@@ -1029,7 +1029,7 @@ const ClassCalendarPanel = ({
 
   return (
     <div
-      className={`min-h-screen bg-gray-100 font-['Poppins'] flex flex-col transform transition-all duration-700 ease-out ${
+      className={`calendar-panel-root min-h-screen bg-gray-100 font-['Poppins'] flex flex-col transform transition-all duration-700 ease-out ${
         isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
       }`}
       onMouseUp={handleMouseUp}
@@ -1053,6 +1053,14 @@ const ClassCalendarPanel = ({
             0% { transform: translateY(-10px) scaleY(0.9); box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.45); }
             55% { transform: translateY(0) scaleY(1.04); box-shadow: 0 0 0 14px rgba(59, 130, 246, 0); }
             100% { transform: translateY(0) scaleY(1); box-shadow: 0 0 0 0 rgba(37, 99, 235, 0); }
+          }
+          .calendar-panel-root,
+          .calendar-panel-root * {
+            font-family: 'Poppins', 'Inter', system-ui, sans-serif;
+          }
+          .calendar-panel-portal,
+          .calendar-panel-portal * {
+            font-family: 'Poppins', 'Inter', system-ui, sans-serif;
           }
         `}
       </style>
@@ -1162,7 +1170,7 @@ const ClassCalendarPanel = ({
             }`}
           >
             <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-              <Info className="text-blue-400" size={20} /> Resumen del Dia
+              <Info className="text-blue-400" size={20} /> Resumen del Día
             </h3>
 
             <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
@@ -1330,7 +1338,7 @@ const ClassCalendarPanel = ({
 
       {activePopover && createPortal(
         <div
-          className={`fixed inset-0 z-[130] ${isMobilePopover ? 'flex items-center justify-center px-3' : 'pointer-events-none'}`}
+          className={`calendar-panel-portal fixed inset-0 z-[130] ${isMobilePopover ? 'flex items-center justify-center px-3' : 'pointer-events-none'}`}
         >
           <div
             ref={popoverRef}
