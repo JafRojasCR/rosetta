@@ -491,14 +491,14 @@ const sendClassScheduleApprovedEmail = async ({
 
 const sendPendingPaymentReviewEmail = async ({
   to,
-  studentEmail,
+  studentName,
   classCode,
   amount,
   paymentId,
   status,
 }) => {
   const amountLabel = Number.isFinite(Number(amount))
-    ? `S/ ${Number(amount).toFixed(2)}`
+    ? `c/${Number(amount).toFixed(2)}`
     : '--';
 
   const html = buildCalendarEmailShell({
@@ -506,7 +506,7 @@ const sendPendingPaymentReviewEmail = async ({
     subtitle: 'Un comprobante requiere revision manual de administracion.',
     accent: '#f59e0b',
     rows: [
-      { label: 'Estudiante', value: studentEmail || '--' },
+      { label: 'Estudiante', value: studentName || '--' },
       { label: 'Clase', value: classCode || '--' },
       { label: 'Monto', value: amountLabel },
       { label: 'Estado', value: status || 'pendiente' },
@@ -521,10 +521,42 @@ const sendPendingPaymentReviewEmail = async ({
   });
 };
 
+const sendApprovedPaymentNotificationEmail = async ({
+  to,
+  studentName,
+  classCode,
+  amount,
+  paymentId,
+}) => {
+  const amountLabel = Number.isFinite(Number(amount))
+    ? `c/${Number(amount).toFixed(2)}`
+    : '--';
+
+  const html = buildCalendarEmailShell({
+    title: 'Pago aprobado',
+    subtitle: 'Un comprobante fue aprobado correctamente.',
+    accent: '#10b981',
+    rows: [
+      { label: 'Estudiante', value: studentName || '--' },
+      { label: 'Clase', value: classCode || '--' },
+      { label: 'Monto', value: amountLabel },
+      { label: 'Estado', value: 'aprobado' },
+      { label: 'Pago ID', value: paymentId || '--' },
+    ],
+  });
+
+  return sendMail({
+    to,
+    subject: 'Rosetta | Pago aprobado',
+    html,
+  });
+};
+
 module.exports = {
   send2FACode,
   sendPasswordResetLink,
   sendClassScheduleRequestEmail,
   sendClassScheduleApprovedEmail,
   sendPendingPaymentReviewEmail,
+  sendApprovedPaymentNotificationEmail,
 };

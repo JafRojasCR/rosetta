@@ -23,21 +23,42 @@ const {
 } = require('../services/googleDriveService');
 const { uploadDir } = require('../config/env');
 const Joi = require('joi');
-const { sendPendingPaymentReviewEmail } = require('../services/emailService');
+const {
+  sendPendingPaymentReviewEmail,
+  sendApprovedPaymentNotificationEmail,
+} = require('../services/emailService');
 
-const notifyAdminsPendingPayment = async (payment) => {
-  if (!payment || String(payment.status || '').toLowerCase() !== 'pendiente') return;
+const resolveStudentDisplayName = async (payment) => {
+  const student = await Student.findOne({ email: payment.studentEmail })
+    .select('name lastName email')
+    .lean();
+
+  if (!student) return payment.studentEmail || '--';
+
+  const fullName = `${student.name || ''} ${student.lastName || ''}`.trim();
+  return fullName || student.email || payment.studentEmail || '--';
+};
+
+const notifyAdminsPaymentStatus = async (payment) => {
+  const status = String(payment?.status || '').toLowerCase();
+  if (!payment || (status !== 'pendiente' && status !== 'aprobado')) return;
 
   const admins = await Admin.find({}).select('email').lean();
   const adminEmails = [...new Set(admins.map((admin) => String(admin?.email || '').trim().toLowerCase()).filter(Boolean))];
 
   if (adminEmails.length === 0) return;
 
+  const studentName = await resolveStudentDisplayName(payment);
+  const sendEmail =
+    status === 'aprobado'
+      ? sendApprovedPaymentNotificationEmail
+      : sendPendingPaymentReviewEmail;
+
   await Promise.allSettled(
     adminEmails.map((adminEmail) =>
-      sendPendingPaymentReviewEmail({
+      sendEmail({
         to: adminEmail,
-        studentEmail: payment.studentEmail,
+        studentName,
         classCode: payment.classCode,
         amount: payment.amount,
         paymentId: payment.paymentId,
@@ -340,8 +361,9 @@ const createPayment = async (req, res) => {
         student,
         accessGrantedAt: new Date(),
       });
+      await notifyAdminsPaymentStatus(payment);
     } else if (payment.status === 'pendiente') {
-      await notifyAdminsPendingPayment(payment);
+      await notifyAdminsPaymentStatus(payment);
     }
 
     return success(
@@ -456,8 +478,9 @@ const updatePaymentStatus = async (req, res) => {
         student,
         accessGrantedAt: new Date(),
       });
+      await notifyAdminsPaymentStatus(payment);
     } else if (status === 'pendiente') {
-      await notifyAdminsPendingPayment(payment);
+      await notifyAdminsPaymentStatus(payment);
     }
 
     return success(res, payment, 'Estado de pago actualizado');
