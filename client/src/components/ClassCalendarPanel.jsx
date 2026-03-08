@@ -184,6 +184,9 @@ const ClassCalendarPanel = ({
   const timelineTouchStartXRef = useRef(null);
   const timelineTouchStartScrollLeftRef = useRef(0);
   const timelineTouchScrollingRef = useRef(false);
+  const touchSelectionStartScrollLeftRef = useRef(0);
+  const touchSelectionMovedRightRef = useRef(false);
+  const touchSelectionLeftLockActiveRef = useRef(false);
   const popoverCloseTimerRef = useRef(null);
   const availableReturnTimerRef = useRef(null);
   const [returningToAvailableRange, setReturningToAvailableRange] = useState(null);
@@ -475,7 +478,20 @@ const ClassCalendarPanel = ({
     }
 
     const before = container.scrollLeft;
-    container.scrollLeft = before + direction * AUTO_SCROLL_STEP_PX;
+    let nextScrollLeft = before + direction * AUTO_SCROLL_STEP_PX;
+    const shouldLockLeftDuringTouchSelection =
+      window.innerWidth <= MOBILE_POPOVER_BREAKPOINT &&
+      isTouchDraggingRef.current &&
+      touchSelectionLeftLockActiveRef.current;
+
+    if (
+      shouldLockLeftDuringTouchSelection &&
+      nextScrollLeft < touchSelectionStartScrollLeftRef.current
+    ) {
+      nextScrollLeft = touchSelectionStartScrollLeftRef.current;
+    }
+
+    container.scrollLeft = nextScrollLeft;
 
     if (lastPointerXRef.current !== null) {
       updateDragEndFromPointer(lastPointerXRef.current);
@@ -509,6 +525,9 @@ const ClassCalendarPanel = ({
     setIsDragging(false);
     setDragStart(null);
     setDragEnd(null);
+    touchSelectionStartScrollLeftRef.current = 0;
+    touchSelectionMovedRightRef.current = false;
+    touchSelectionLeftLockActiveRef.current = false;
   }, [stopAutoScroll]);
 
   const openPopover = useCallback(
@@ -601,12 +620,18 @@ const ClassCalendarPanel = ({
         touchStartXRef.current = point?.x ?? null;
         touchStartYRef.current = point?.y ?? null;
         touchStartScrollLeftRef.current = container?.scrollLeft || 0;
+        touchSelectionStartScrollLeftRef.current = container?.scrollLeft || 0;
+        touchSelectionMovedRightRef.current = false;
+        touchSelectionLeftLockActiveRef.current = false;
       } else {
         isTouchDraggingRef.current = false;
         touchScrollIntentRef.current = false;
         touchStartXRef.current = null;
         touchStartYRef.current = null;
         touchStartScrollLeftRef.current = 0;
+        touchSelectionStartScrollLeftRef.current = 0;
+        touchSelectionMovedRightRef.current = false;
+        touchSelectionLeftLockActiveRef.current = false;
       }
 
       return true;
@@ -686,11 +711,36 @@ const ClassCalendarPanel = ({
     const container = timelineScrollRef.current;
     if (!container) return;
 
+    if (
+      window.innerWidth <= MOBILE_POPOVER_BREAKPOINT &&
+      isTouchDraggingRef.current &&
+      container.scrollLeft > touchSelectionStartScrollLeftRef.current + 1
+    ) {
+      touchSelectionMovedRightRef.current = true;
+      touchSelectionLeftLockActiveRef.current = true;
+    }
+
+    if (
+      window.innerWidth <= MOBILE_POPOVER_BREAKPOINT &&
+      isTouchDraggingRef.current &&
+      touchSelectionLeftLockActiveRef.current &&
+      container.scrollLeft < touchSelectionStartScrollLeftRef.current
+    ) {
+      container.scrollLeft = touchSelectionStartScrollLeftRef.current;
+    }
+
     const rect = container.getBoundingClientRect();
     const threshold = 46;
     if (point.x > rect.right - threshold) {
       startAutoScroll(1);
-    } else if (point.x < rect.left + threshold) {
+    } else if (
+      point.x < rect.left + threshold &&
+      !(
+        window.innerWidth <= MOBILE_POPOVER_BREAKPOINT &&
+        isTouchDraggingRef.current &&
+        touchSelectionLeftLockActiveRef.current
+      )
+    ) {
       startAutoScroll(-1);
     } else {
       stopAutoScroll();
@@ -709,6 +759,9 @@ const ClassCalendarPanel = ({
     touchStartXRef.current = null;
     touchStartYRef.current = null;
     touchStartScrollLeftRef.current = 0;
+    touchSelectionStartScrollLeftRef.current = 0;
+    touchSelectionMovedRightRef.current = false;
+    touchSelectionLeftLockActiveRef.current = false;
 
     if (cancelledByTouchScroll) {
       resetSelection();
