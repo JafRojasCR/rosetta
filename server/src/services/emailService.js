@@ -489,9 +489,42 @@ const sendClassScheduleApprovedEmail = async ({
   });
 };
 
+const sendPendingPaymentReviewEmail = async ({
+  to,
+  studentEmail,
+  classCode,
+  amount,
+  paymentId,
+  status,
+}) => {
+  const amountLabel = Number.isFinite(Number(amount))
+    ? `S/ ${Number(amount).toFixed(2)}`
+    : '--';
+
+  const html = buildCalendarEmailShell({
+    title: 'Comprobante pendiente de revision',
+    subtitle: 'Un comprobante requiere revision manual de administracion.',
+    accent: '#f59e0b',
+    rows: [
+      { label: 'Estudiante', value: studentEmail || '--' },
+      { label: 'Clase', value: classCode || '--' },
+      { label: 'Monto', value: amountLabel },
+      { label: 'Estado', value: status || 'pendiente' },
+      { label: 'Pago ID', value: paymentId || '--' },
+    ],
+  });
+
+  return sendMail({
+    to,
+    subject: 'Rosetta | Pago pendiente de revision',
+    html,
+  });
+};
+
 module.exports = {
   send2FACode,
   sendPasswordResetLink,
   sendClassScheduleRequestEmail,
   sendClassScheduleApprovedEmail,
+  sendPendingPaymentReviewEmail,
 };

@@ -1,6 +1,7 @@
 const Payment = require('../models/Payment');
 const Class = require('../models/Class');
 const Student = require('../models/Student');
+const Admin = require('../models/Admin');
 const fs = require('fs/promises');
 const path = require('path');
 const { success, error } = require('../utils/apiResponse');
@@ -22,6 +23,29 @@ const {
 } = require('../services/googleDriveService');
 const { uploadDir } = require('../config/env');
 const Joi = require('joi');
+const { sendPendingPaymentReviewEmail } = require('../services/emailService');
+
+const notifyAdminsPendingPayment = async (payment) => {
+  if (!payment || String(payment.status || '').toLowerCase() !== 'pendiente') return;
+
+  const admins = await Admin.find({}).select('email').lean();
+  const adminEmails = [...new Set(admins.map((admin) => String(admin?.email || '').trim().toLowerCase()).filter(Boolean))];
+
+  if (adminEmails.length === 0) return;
+
+  await Promise.allSettled(
+    adminEmails.map((adminEmail) =>
+      sendPendingPaymentReviewEmail({
+        to: adminEmail,
+        studentEmail: payment.studentEmail,
+        classCode: payment.classCode,
+        amount: payment.amount,
+        paymentId: payment.paymentId,
+        status: payment.status,
+      })
+    )
+  );
+};
 
 const extractGoogleDriveFileId = (url = '') => {
   const idFromQuery = String(url || '').match(/[?&]id=([^&]+)/);
@@ -316,6 +340,8 @@ const createPayment = async (req, res) => {
         student,
         accessGrantedAt: new Date(),
       });
+    } else if (payment.status === 'pendiente') {
+      await notifyAdminsPendingPayment(payment);
     }
 
     return success(
@@ -430,6 +456,8 @@ const updatePaymentStatus = async (req, res) => {
         student,
         accessGrantedAt: new Date(),
       });
+    } else if (status === 'pendiente') {
+      await notifyAdminsPendingPayment(payment);
     }
 
     return success(res, payment, 'Estado de pago actualizado');

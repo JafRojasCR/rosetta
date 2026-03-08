@@ -357,19 +357,21 @@ const reserveSlot = async (req, res) => {
   });
 
   const admins = await Admin.find({}).select('email').lean();
+  const adminEmails = [...new Set(admins.map((admin) => String(admin?.email || '').trim().toLowerCase()).filter(Boolean))];
   const studentDisplayName = `${student.name || ''} ${student.lastName || ''}`.trim() || student.email;
 
-  for (const admin of admins) {
-    if (!admin?.email) continue;
-    sendClassScheduleRequestEmail({
-      to: admin.email,
-      studentName: studentDisplayName,
-      studentEmail: student.email,
-      dateKey,
-      startMinute: value.startMinute,
-      endMinute: value.endMinute,
-    }).catch(() => null);
-  }
+  await Promise.allSettled(
+    adminEmails.map((adminEmail) =>
+      sendClassScheduleRequestEmail({
+        to: adminEmail,
+        studentName: studentDisplayName,
+        studentEmail: student.email,
+        dateKey,
+        startMinute: value.startMinute,
+        endMinute: value.endMinute,
+      })
+    )
+  );
 
   return success(res, toPublicSlot(createdPending.toObject(), false, req.user?.id), 'Solicitud enviada.', 201);
 };
