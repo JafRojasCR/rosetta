@@ -6,6 +6,7 @@ const { success, error } = require('../utils/apiResponse');
 const {
   sendClassScheduleRequestEmail,
   sendClassScheduleApprovedEmail,
+  sendClassScheduleRejectedEmail,
 } = require('../services/emailService');
 
 const isoDateSchema = Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).required();
@@ -412,6 +413,21 @@ const deleteSlot = async (req, res) => {
   if (requesterRole === 'admin') {
     const deleted = await ClassCalendarSlot.findByIdAndDelete(slotId).lean();
     if (!deleted) return error(res, 'Bloque no encontrado.', 404);
+
+    const isStudentOwned = Boolean(deleted?.student?.email);
+    const wasPendingOrBooked = deleted?.status === 'pending' || deleted?.status === 'booked';
+    if (isStudentOwned && wasPendingOrBooked) {
+      const fullName = `${deleted.student?.name || ''} ${deleted.student?.lastName || ''}`.trim();
+      sendClassScheduleRejectedEmail({
+        to: deleted.student.email,
+        studentName: fullName || deleted.student.email,
+        dateKey: deleted.dateKey,
+        startMinute: deleted.startMinute,
+        endMinute: deleted.endMinute,
+        previousStatus: deleted.status,
+      }).catch(() => null);
+    }
+
     return success(res, { id: slotId }, 'Bloque eliminado.');
   }
 

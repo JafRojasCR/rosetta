@@ -499,6 +499,43 @@ const sendClassScheduleApprovedEmail = async ({
   });
 };
 
+const sendClassScheduleRejectedEmail = async ({
+  to,
+  studentName,
+  dateKey,
+  startMinute,
+  endMinute,
+  previousStatus,
+}) => {
+  const wasBooked = String(previousStatus || '').toLowerCase() === 'booked';
+  const title = wasBooked ? 'Tu clase fue cancelada' : 'Tu solicitud de clase fue rechazada';
+  const subtitle = wasBooked
+    ? `Hola ${studentName || 'estudiante'}, tu clase reservada fue cancelada.`
+    : `Hola ${studentName || 'estudiante'}, tu solicitud de clase no fue aprobada.`;
+
+  const html = buildCalendarEmailShell({
+    title,
+    subtitle,
+    accent: '#ef4444',
+    rows: [
+      { label: 'Fecha', value: dateKey || '--' },
+      {
+        label: 'Horario',
+        value: `${formatHourMinute(startMinute)} - ${formatHourMinute(endMinute)}`,
+      },
+      { label: 'Estado', value: wasBooked ? 'cancelado' : 'rechazado' },
+    ],
+  });
+
+  return sendMail({
+    to,
+    subject: wasBooked
+      ? 'Rosetta | Clase cancelada'
+      : 'Rosetta | Solicitud de clase rechazada',
+    html,
+  });
+};
+
 const sendPendingPaymentReviewEmail = async ({
   to,
   studentName,
@@ -635,6 +672,7 @@ module.exports = {
   sendPasswordResetLink,
   sendClassScheduleRequestEmail,
   sendClassScheduleApprovedEmail,
+  sendClassScheduleRejectedEmail,
   sendPendingPaymentReviewEmail,
   sendApprovedPaymentNotificationEmail,
   sendStudentPaymentApprovedEmail,
