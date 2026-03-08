@@ -397,6 +397,16 @@ const formatHourMinute = (minute = 0) => {
   return `${hh}:${mm}`;
 };
 
+const formatPaymentDate = (value) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '--';
+
+  const dd = String(date.getDate()).padStart(2, '0');
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const yyyy = date.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
+};
+
 const buildCalendarEmailShell = ({ title, subtitle, rows = [], accent = '#2563eb' }) => {
   const rowsHtml = rows
     .map(
@@ -552,6 +562,74 @@ const sendApprovedPaymentNotificationEmail = async ({
   });
 };
 
+const sendStudentPaymentApprovedEmail = async ({
+  to,
+  studentName,
+  classCode,
+  amount,
+  paymentId,
+  paymentDate,
+  billNumber,
+}) => {
+  const amountLabel = Number.isFinite(Number(amount))
+    ? `c/${Number(amount).toFixed(2)}`
+    : '--';
+
+  const html = buildCalendarEmailShell({
+    title: 'Tu pago fue aprobado',
+    subtitle: `Hola ${studentName || 'estudiante'}, ahora ya tienes acceso a tu clase pagada.`,
+    accent: '#10b981',
+    rows: [
+      { label: 'Pago ID', value: paymentId || '--' },
+      { label: 'Clase', value: classCode || '--' },
+      { label: 'Comprobante', value: billNumber || '--' },
+      { label: 'Fecha', value: formatPaymentDate(paymentDate) },
+      { label: 'Monto', value: amountLabel },
+      { label: 'Estado', value: 'aprobado' },
+    ],
+  });
+
+  return sendMail({
+    to,
+    subject: 'Rosetta | Tu pago fue aprobado',
+    html,
+  });
+};
+
+const sendStudentPaymentRejectedEmail = async ({
+  to,
+  studentName,
+  classCode,
+  amount,
+  paymentId,
+  paymentDate,
+  billNumber,
+}) => {
+  const amountLabel = Number.isFinite(Number(amount))
+    ? `c/${Number(amount).toFixed(2)}`
+    : '--';
+
+  const html = buildCalendarEmailShell({
+    title: 'Tu pago fue rechazado',
+    subtitle: `Hola ${studentName || 'estudiante'}, elimina este pago de tu historial de pagos y sube un comprobante correcto para intentarlo nuevamente.`,
+    accent: '#ef4444',
+    rows: [
+      { label: 'Pago ID', value: paymentId || '--' },
+      { label: 'Clase', value: classCode || '--' },
+      { label: 'Comprobante', value: billNumber || '--' },
+      { label: 'Fecha', value: formatPaymentDate(paymentDate) },
+      { label: 'Monto', value: amountLabel },
+      { label: 'Estado', value: 'rechazado' },
+    ],
+  });
+
+  return sendMail({
+    to,
+    subject: 'Rosetta | Tu pago fue rechazado',
+    html,
+  });
+};
+
 module.exports = {
   send2FACode,
   sendPasswordResetLink,
@@ -559,4 +637,6 @@ module.exports = {
   sendClassScheduleApprovedEmail,
   sendPendingPaymentReviewEmail,
   sendApprovedPaymentNotificationEmail,
+  sendStudentPaymentApprovedEmail,
+  sendStudentPaymentRejectedEmail,
 };

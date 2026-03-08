@@ -26,6 +26,8 @@ const Joi = require('joi');
 const {
   sendPendingPaymentReviewEmail,
   sendApprovedPaymentNotificationEmail,
+  sendStudentPaymentApprovedEmail,
+  sendStudentPaymentRejectedEmail,
 } = require('../services/emailService');
 
 const resolveStudentDisplayName = async (payment) => {
@@ -66,6 +68,29 @@ const notifyAdminsPaymentStatus = async (payment) => {
       })
     )
   );
+};
+
+const notifyStudentPaymentDecision = async (payment) => {
+  const status = String(payment?.status || '').toLowerCase();
+  if (!payment?.studentEmail || (status !== 'aprobado' && status !== 'rechazado')) return;
+
+  const studentName = await resolveStudentDisplayName(payment);
+  const payload = {
+    to: payment.studentEmail,
+    studentName,
+    classCode: payment.classCode,
+    amount: payment.amount,
+    paymentId: payment.paymentId,
+    paymentDate: payment.date,
+    billNumber: payment.billNumber,
+  };
+
+  if (status === 'aprobado') {
+    await sendStudentPaymentApprovedEmail(payload);
+    return;
+  }
+
+  await sendStudentPaymentRejectedEmail(payload);
 };
 
 const extractGoogleDriveFileId = (url = '') => {
@@ -362,6 +387,7 @@ const createPayment = async (req, res) => {
         accessGrantedAt: new Date(),
       });
       await notifyAdminsPaymentStatus(payment);
+      await notifyStudentPaymentDecision(payment);
     } else if (payment.status === 'pendiente') {
       await notifyAdminsPaymentStatus(payment);
     }
@@ -479,8 +505,11 @@ const updatePaymentStatus = async (req, res) => {
         accessGrantedAt: new Date(),
       });
       await notifyAdminsPaymentStatus(payment);
+      await notifyStudentPaymentDecision(payment);
     } else if (status === 'pendiente') {
       await notifyAdminsPaymentStatus(payment);
+    } else if (status === 'rechazado') {
+      await notifyStudentPaymentDecision(payment);
     }
 
     return success(res, payment, 'Estado de pago actualizado');
