@@ -392,13 +392,21 @@ const approvePendingSlot = async (req, res) => {
 
   if (pendingSlot.student?.email) {
     const fullName = `${pendingSlot.student.name || ''} ${pendingSlot.student.lastName || ''}`.trim();
-    sendClassScheduleApprovedEmail({
-      to: pendingSlot.student.email,
-      studentName: fullName,
-      dateKey: pendingSlot.dateKey,
-      startMinute: pendingSlot.startMinute,
-      endMinute: pendingSlot.endMinute,
-    }).catch(() => null);
+    try {
+      await sendClassScheduleApprovedEmail({
+        to: pendingSlot.student.email,
+        studentName: fullName || pendingSlot.student.email,
+        dateKey: pendingSlot.dateKey,
+        startMinute: pendingSlot.startMinute,
+        endMinute: pendingSlot.endMinute,
+      });
+    } catch (mailError) {
+      return error(
+        res,
+        `La solicitud fue aprobada, pero no se pudo enviar el correo al estudiante: ${mailError.message}`,
+        502
+      );
+    }
   }
 
   return success(res, toPublicSlot(pendingSlot.toObject(), true), 'Solicitud aprobada.');
@@ -411,23 +419,33 @@ const deleteSlot = async (req, res) => {
   const requesterRole = String(req.user?.role || '').toLowerCase();
 
   if (requesterRole === 'admin') {
-    const deleted = await ClassCalendarSlot.findByIdAndDelete(slotId).lean();
-    if (!deleted) return error(res, 'Bloque no encontrado.', 404);
+    const slotToDelete = await ClassCalendarSlot.findById(slotId).lean();
+    if (!slotToDelete) return error(res, 'Bloque no encontrado.', 404);
 
-    const isStudentOwned = Boolean(deleted?.student?.email);
-    const wasPendingOrBooked = deleted?.status === 'pending' || deleted?.status === 'booked';
+    const isStudentOwned = Boolean(slotToDelete?.student?.email);
+    const wasPendingOrBooked = slotToDelete?.status === 'pending' || slotToDelete?.status === 'booked';
     if (isStudentOwned && wasPendingOrBooked) {
-      const fullName = `${deleted.student?.name || ''} ${deleted.student?.lastName || ''}`.trim();
-      sendClassScheduleRejectedEmail({
-        to: deleted.student.email,
-        studentName: fullName || deleted.student.email,
-        dateKey: deleted.dateKey,
-        startMinute: deleted.startMinute,
-        endMinute: deleted.endMinute,
-        previousStatus: deleted.status,
-      }).catch(() => null);
+      const fullName = `${slotToDelete.student?.name || ''} ${slotToDelete.student?.lastName || ''}`.trim();
+
+      try {
+        await sendClassScheduleRejectedEmail({
+          to: slotToDelete.student.email,
+          studentName: fullName || slotToDelete.student.email,
+          dateKey: slotToDelete.dateKey,
+          startMinute: slotToDelete.startMinute,
+          endMinute: slotToDelete.endMinute,
+          previousStatus: slotToDelete.status,
+        });
+      } catch (mailError) {
+        return error(
+          res,
+          `No se pudo enviar el correo al estudiante. El bloque no fue eliminado: ${mailError.message}`,
+          502
+        );
+      }
     }
 
+    await ClassCalendarSlot.findByIdAndDelete(slotId);
     return success(res, { id: slotId }, 'Bloque eliminado.');
   }
 
