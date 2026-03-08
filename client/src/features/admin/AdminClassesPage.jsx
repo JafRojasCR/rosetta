@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { createPortal } from 'react-dom';
 import {
   ArrowLeft,
   BookOpen,
@@ -1132,14 +1133,17 @@ const AdminClassesPage = () => {
         </section>
       </main>
 
-      <button
-        type="button"
-        onClick={() => navigate('/admin/calendario')}
-        className="fixed bottom-5 right-4 sm:bottom-7 sm:right-7 z-40 inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-slate-900 text-white font-black text-xs uppercase tracking-wider hover:bg-slate-800 transition-colors shadow-[0_18px_40px_rgba(15,23,42,0.35)]"
-      >
-        <CalendarDays size={16} />
-        Abrir calendario
-      </button>
+      {createPortal(
+        <button
+          type="button"
+          onClick={() => navigate('/admin/calendario')}
+          className="fixed bottom-5 right-4 sm:bottom-7 sm:right-7 z-[120] inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-slate-900 text-white font-black text-xs uppercase tracking-wider hover:bg-slate-800 transition-colors shadow-[0_18px_40px_rgba(15,23,42,0.35)]"
+        >
+          <CalendarDays size={16} />
+          Abrir calendario
+        </button>,
+        document.body
+      )}
 
       <footer className="py-4 sm:py-6 text-center text-gray-400 text-xs sm:text-sm border-t border-gray-100 bg-white/60">
         © 2026 Rosetta - Plataforma de Aula Virtual

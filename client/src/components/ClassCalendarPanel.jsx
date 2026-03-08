@@ -34,8 +34,9 @@ const POPUP_FALLBACK_WIDTH = 360;
 const POPUP_FALLBACK_HEIGHT = 360;
 const AVAILABLE_RETURN_ANIMATION_MS = 520;
 const MOBILE_POPOVER_BREAKPOINT = 900;
+const TOUCH_SCROLL_CANCEL_THRESHOLD = 12;
+const TOUCH_HOLD_TO_SELECT_MS = 500;
 const AUTO_SCROLL_STEP_PX = 8;
-const TOUCH_SELECTION_DELAY_MS = 30;
 
 const toIsoDate = (value) => {
   if (!value) return '';
@@ -179,11 +180,8 @@ const ClassCalendarPanel = ({
   const touchStartYRef = useRef(null);
   const touchStartScrollLeftRef = useRef(0);
   const touchScrollIntentRef = useRef(false);
-  const touchSelectionDelayTimerRef = useRef(null);
-  const pendingTouchSelectionRef = useRef(null);
-  const timelineTouchStartXRef = useRef(null);
-  const timelineTouchStartScrollLeftRef = useRef(0);
-  const timelineTouchScrollingRef = useRef(false);
+  const touchHoldTimerRef = useRef(null);
+  const pendingTouchMinuteRef = useRef(null);
   const popoverCloseTimerRef = useRef(null);
   const availableReturnTimerRef = useRef(null);
   const [returningToAvailableRange, setReturningToAvailableRange] = useState(null);
@@ -252,8 +250,8 @@ const ClassCalendarPanel = ({
       if (popoverCloseTimerRef.current) {
         clearTimeout(popoverCloseTimerRef.current);
       }
-      if (touchSelectionDelayTimerRef.current) {
-        clearTimeout(touchSelectionDelayTimerRef.current);
+      if (touchHoldTimerRef.current) {
+        clearTimeout(touchHoldTimerRef.current);
       }
       if (availableReturnTimerRef.current) {
         clearTimeout(availableReturnTimerRef.current);
@@ -547,17 +545,45 @@ const ClassCalendarPanel = ({
     }, AVAILABLE_RETURN_ANIMATION_MS);
   }, []);
 
-  const clearPendingTouchSelection = useCallback(() => {
-    if (touchSelectionDelayTimerRef.current) {
-      clearTimeout(touchSelectionDelayTimerRef.current);
-      touchSelectionDelayTimerRef.current = null;
+  const clearTouchHold = useCallback(() => {
+    if (touchHoldTimerRef.current) {
+      clearTimeout(touchHoldTimerRef.current);
+      touchHoldTimerRef.current = null;
     }
-    pendingTouchSelectionRef.current = null;
+    pendingTouchMinuteRef.current = null;
   }, []);
 
-  const beginSelection = useCallback(
-    ({ minute, point, isTouch }) => {
-      if (typeof minute !== 'number') return false;
+  const canStartSelectionAtMinute = useCallback(
+    (minute) => {
+      if (isAdmin) {
+        const occupied = daySlots.some(
+          (slot) => minute >= slot.startMinute && minute < slot.endMinute
+        );
+        return !occupied;
+      }
+
+      const insideAvailable = daySlots.some(
+        (slot) =>
+          slot.status === 'available' &&
+          minute >= slot.startMinute &&
+          minute < slot.endMinute
+      );
+      if (!insideAvailable) return false;
+
+      const blocked = daySlots.some(
+        (slot) =>
+          (slot.status === 'pending' || slot.status === 'booked') &&
+          minute >= slot.startMinute &&
+          minute < slot.endMinute
+      );
+      return !blocked;
+    },
+    [daySlots, isAdmin]
+  );
+
+  const startSelection = useCallback(
+    ({ minute, point = null, isTouch = false }) => {
+      if (!canStartSelectionAtMinute(minute)) return false;
 
       setError('');
       setMessage('');
@@ -566,107 +592,83 @@ const ClassCalendarPanel = ({
         closePopover();
       }
 
-      if (isAdmin) {
-        const occupied = daySlots.some(
-          (slot) => minute >= slot.startMinute && minute < slot.endMinute
-        );
-        if (occupied) return false;
-      } else {
-        const insideAvailable = daySlots.some(
-          (slot) =>
-            slot.status === 'available' &&
-            minute >= slot.startMinute &&
-            minute < slot.endMinute
-        );
-        if (!insideAvailable) return false;
-
-        const blocked = daySlots.some(
-          (slot) =>
-            (slot.status === 'pending' || slot.status === 'booked') &&
-            minute >= slot.startMinute &&
-            minute < slot.endMinute
-        );
-        if (blocked) return false;
-      }
-
       setIsDragging(true);
       setDragStart(minute);
       setDragEnd(minute);
       lastPointerXRef.current = Number.isFinite(point?.x) ? point.x : null;
-
-      if (isTouch) {
-        const container = timelineScrollRef.current;
-        isTouchDraggingRef.current = true;
-        touchScrollIntentRef.current = false;
-        touchStartXRef.current = point?.x ?? null;
-        touchStartYRef.current = point?.y ?? null;
-        touchStartScrollLeftRef.current = container?.scrollLeft || 0;
-      } else {
-        isTouchDraggingRef.current = false;
-        touchScrollIntentRef.current = false;
-        touchStartXRef.current = null;
-        touchStartYRef.current = null;
-        touchStartScrollLeftRef.current = 0;
-      }
-
+      isTouchDraggingRef.current = isTouch;
       return true;
     },
-    [activePopover, closePopover, daySlots, isAdmin]
+    [activePopover, canStartSelectionAtMinute, closePopover]
   );
 
   const handleMouseDown = (minute, event) => {
     event.preventDefault();
     const point = getEventClientPoint(event, event.currentTarget);
-    beginSelection({ minute, point, isTouch: false });
+    startSelection({ minute, point, isTouch: false });
   };
 
-  const handleBarTouchStart = (minute, event) => {
+  const handleTouchStart = (minute, event) => {
     const point = getEventClientPoint(event, event.currentTarget);
-    clearPendingTouchSelection();
-    pendingTouchSelectionRef.current = { minute, point };
+    const container = timelineScrollRef.current;
 
-    touchSelectionDelayTimerRef.current = setTimeout(() => {
-      const pending = pendingTouchSelectionRef.current;
-      if (!pending) return;
+    clearTouchHold();
+    isTouchDraggingRef.current = false;
+    touchScrollIntentRef.current = false;
+    pendingTouchMinuteRef.current = minute;
+    touchStartXRef.current = point?.x ?? null;
+    touchStartYRef.current = point?.y ?? null;
+    touchStartScrollLeftRef.current = container?.scrollLeft || 0;
 
-      beginSelection({
-        minute: pending.minute,
-        point: pending.point,
+    touchHoldTimerRef.current = setTimeout(() => {
+      if (touchScrollIntentRef.current) {
+        clearTouchHold();
+        return;
+      }
+
+      const heldMinute = pendingTouchMinuteRef.current;
+      if (heldMinute === null || heldMinute === undefined) {
+        clearTouchHold();
+        return;
+      }
+
+      startSelection({
+        minute: heldMinute,
+        point: {
+          x: touchStartXRef.current,
+          y: touchStartYRef.current,
+        },
         isTouch: true,
       });
-      clearPendingTouchSelection();
-    }, TOUCH_SELECTION_DELAY_MS);
+      clearTouchHold();
+    }, TOUCH_HOLD_TO_SELECT_MS);
   };
 
-  const handleTimelineTouchStart = (event) => {
-    if (window.innerWidth > MOBILE_POPOVER_BREAKPOINT || isDragging) return;
+  const handleTouchMoveBeforeDrag = (event) => {
+    if (isDragging || !touchHoldTimerRef.current) return;
 
-    const target = event.target;
-    if (target instanceof Element && target.closest('[data-time-bar="true"]')) return;
+    const point = getEventClientPoint(event);
+    if (!point) return;
 
-    const touch = event.touches?.[0];
-    if (!touch) return;
+    const movedX = Number.isFinite(touchStartXRef.current)
+      ? Math.abs(point.x - touchStartXRef.current)
+      : 0;
+    const movedY = Number.isFinite(touchStartYRef.current)
+      ? Math.abs(point.y - touchStartYRef.current)
+      : 0;
+    const container = timelineScrollRef.current;
+    const movedScroll = container
+      ? Math.abs((container.scrollLeft || 0) - touchStartScrollLeftRef.current)
+      : 0;
 
-    timelineTouchScrollingRef.current = true;
-    timelineTouchStartXRef.current = touch.clientX;
-    timelineTouchStartScrollLeftRef.current = timelineScrollRef.current?.scrollLeft || 0;
-  };
-
-  const handleTimelineTouchMove = (event) => {
-    if (!timelineTouchScrollingRef.current) return;
-    if (window.innerWidth > MOBILE_POPOVER_BREAKPOINT) return;
-
-    const touch = event.touches?.[0];
-    if (!touch || !timelineScrollRef.current || !Number.isFinite(timelineTouchStartXRef.current)) return;
-
-    const deltaX = touch.clientX - timelineTouchStartXRef.current;
-    timelineScrollRef.current.scrollLeft = timelineTouchStartScrollLeftRef.current - deltaX;
-    event.preventDefault();
-  };
-
-  const handleTimelineTouchEnd = () => {
-    timelineTouchScrollingRef.current = false;
-    timelineTouchStartXRef.current = null;
+    if (
+      movedX > TOUCH_SCROLL_CANCEL_THRESHOLD ||
+      movedY > TOUCH_SCROLL_CANCEL_THRESHOLD ||
+      movedScroll > TOUCH_SCROLL_CANCEL_THRESHOLD
+    ) {
+      touchScrollIntentRef.current = true;
+      clearTouchHold();
+    }
   };
 
   const handleMouseEnter = (minute) => {
@@ -674,33 +676,8 @@ const ClassCalendarPanel = ({
     setDragEnd(minute);
   };
 
-  const handleBarTouchMove = (event) => {
-    if (!isDragging) return;
-
-    const point = getEventClientPoint(event);
-    if (!point) return;
-
-    lastPointerXRef.current = point.x;
-    updateDragEndFromPointer(point.x);
-
-    const container = timelineScrollRef.current;
-    if (!container) return;
-
-    const rect = container.getBoundingClientRect();
-    const threshold = 46;
-    if (point.x > rect.right - threshold) {
-      startAutoScroll(1);
-    } else if (point.x < rect.left + threshold) {
-      startAutoScroll(-1);
-    } else {
-      stopAutoScroll();
-    }
-
-    event.preventDefault();
-  };
-
   const handleMouseUp = (event) => {
-    clearPendingTouchSelection();
+    clearTouchHold();
     stopAutoScroll();
 
     const cancelledByTouchScroll = touchScrollIntentRef.current;
@@ -812,7 +789,26 @@ const ClassCalendarPanel = ({
       updateDragEndFromPointer(point.x);
 
       const container = timelineScrollRef.current;
-      if (!container) return;
+      if (isTouchDraggingRef.current && container) {
+        const startX = touchStartXRef.current;
+        const startY = touchStartYRef.current;
+        const movedX = Number.isFinite(startX) ? Math.abs(point.x - startX) : 0;
+        const movedY = Number.isFinite(startY) ? Math.abs(point.y - startY) : 0;
+        const movedScroll = Math.abs((container.scrollLeft || 0) - touchStartScrollLeftRef.current);
+        const horizontalIntent = movedX > movedY + 4;
+
+        if (
+          movedScroll > TOUCH_SCROLL_CANCEL_THRESHOLD ||
+          (movedX > TOUCH_SCROLL_CANCEL_THRESHOLD && horizontalIntent)
+        ) {
+          touchScrollIntentRef.current = true;
+          stopAutoScroll();
+          resetSelection();
+          return;
+        }
+      }
+
+      if (touchScrollIntentRef.current) return;
 
       const rect = container.getBoundingClientRect();
       const threshold = 46;
@@ -1034,6 +1030,7 @@ const ClassCalendarPanel = ({
       }`}
       onMouseUp={handleMouseUp}
       onTouchEnd={handleMouseUp}
+      onTouchMove={handleTouchMoveBeforeDrag}
     >
       <style>
         {`@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap');
@@ -1218,9 +1215,6 @@ const ClassCalendarPanel = ({
               isMonthTransitioning ? 'opacity-45 translate-y-1' : 'opacity-100 translate-y-0'
             }`}
             ref={timelineScrollRef}
-            onTouchStart={handleTimelineTouchStart}
-            onTouchMove={handleTimelineTouchMove}
-            onTouchEnd={handleTimelineTouchEnd}
           >
             <div className="p-8 min-w-max">
               <div className="mb-6 flex items-center justify-between gap-3">
@@ -1268,8 +1262,7 @@ const ClassCalendarPanel = ({
                         type="button"
                         ref={(node) => setMinuteButtonRef(minute, node)}
                         onMouseDown={(event) => handleMouseDown(minute, event)}
-                        onTouchStart={(event) => handleBarTouchStart(minute, event)}
-                        onTouchMove={handleBarTouchMove}
+                        onTouchStart={(event) => handleTouchStart(minute, event)}
                         onMouseEnter={() => handleMouseEnter(minute)}
                         onClick={(event) => slot && handleOpenExisting(slot, event, minute)}
                         data-time-bar="true"
