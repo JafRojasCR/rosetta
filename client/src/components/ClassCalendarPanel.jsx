@@ -1062,6 +1062,49 @@ const ClassCalendarPanel = ({
           .calendar-panel-portal * {
             font-family: 'Poppins', 'Inter', system-ui, sans-serif;
           }
+
+          /* Thin horizontal scrollbar for the 30-minute timeline wrapper (thumb-focused). */
+          .timeline-blocks-scroll {
+            overflow-x: auto !important;
+            overflow-y: hidden !important;
+            padding-bottom: 8px;
+            scrollbar-gutter: stable;
+            -ms-overflow-style: auto !important;
+            scrollbar-width: thin !important;
+            scrollbar-color: rgba(148,163,184,0.85) transparent !important;
+          }
+
+          .timeline-blocks-scroll::-webkit-scrollbar {
+            height: 6px !important;
+            width: 0 !important;
+            display: block !important;
+            background: transparent !important;
+          }
+
+          .timeline-blocks-scroll::-webkit-scrollbar-track {
+            background: transparent !important;
+            margin: 0 16px 1px 16px;
+          }
+
+          .timeline-blocks-scroll::-webkit-scrollbar-thumb {
+            background-color: rgba(148,163,184,0.85) !important;
+            border-radius: 9999px;
+            border: 1px solid transparent;
+            background-clip: padding-box;
+          }
+
+          .timeline-blocks-scroll::-webkit-scrollbar-thumb:hover {
+            background-color: rgba(100,116,139,0.95) !important;
+          }
+
+          .timeline-blocks-scroll::-webkit-scrollbar-button,
+          .timeline-blocks-scroll::-webkit-scrollbar-corner,
+          .timeline-blocks-scroll::-webkit-resizer {
+            display: none !important;
+            width: 0 !important;
+            height: 0 !important;
+            background: transparent !important;
+          }
         `}
       </style>
 
@@ -1222,15 +1265,18 @@ const ClassCalendarPanel = ({
           {message && <div className="bg-emerald-50 text-emerald-700 rounded-2xl p-4 font-semibold">{message}</div>}
 
           <div
-            className={`bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-x-auto transition-all duration-300 ${
+            className={`bg-white rounded-[2.5rem] border border-slate-100 shadow-sm transition-all duration-300 ${
               isMonthTransitioning ? 'opacity-45 translate-y-1' : 'opacity-100 translate-y-0'
             }`}
-            ref={timelineScrollRef}
-            onTouchStart={handleTimelineTouchStart}
-            onTouchMove={handleTimelineTouchMove}
-            onTouchEnd={handleTimelineTouchEnd}
           >
-            <div className="p-8 min-w-max">
+            <div
+              className="timeline-blocks-scroll mx-3 mb-2"
+              ref={timelineScrollRef}
+              onTouchStart={handleTimelineTouchStart}
+              onTouchMove={handleTimelineTouchMove}
+              onTouchEnd={handleTimelineTouchEnd}
+            >
+              <div className="p-8 min-w-max">
               <div className="mb-6 flex items-center justify-between gap-3">
                 <div>
                   <h3 className="text-xl font-extrabold text-slate-900 tracking-tight">Linea Horaria del Dia</h3>
@@ -1305,6 +1351,7 @@ const ClassCalendarPanel = ({
                     </div>
                   );
                 })}
+              </div>
               </div>
             </div>
           </div>
