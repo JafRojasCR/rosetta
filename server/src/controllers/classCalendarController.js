@@ -15,7 +15,12 @@ const createAvailabilitySchema = Joi.object({
   date: isoDateSchema,
   startMinute: Joi.number().integer().min(0).max(1410).required(),
   endMinute: Joi.number().integer().min(30).max(1440).required(),
-  detail: Joi.string().trim().allow('').default('Horario habilitado por administrador'),
+  slotType: Joi.string().valid('available', 'group').default('available'),
+  detail: Joi.when('slotType', {
+    is: 'group',
+    then: Joi.string().trim().min(3).max(180).required(),
+    otherwise: Joi.string().trim().allow('').default('Horario habilitado por administrador'),
+  }),
 });
 
 const reserveSlotSchema = Joi.object({
@@ -245,16 +250,18 @@ const createAvailabilitySlot = async (req, res) => {
     return error(res, 'No se puede habilitar el bloque: existe traslape con otro horario.', 409);
   }
 
-  const mergedSlot = await mergeAdjacentAvailableSlots({
-    daySlots,
-    startMinute: value.startMinute,
-    endMinute: value.endMinute,
-    dayDateUtc,
-    detail: value.detail,
-  });
+  if (value.slotType === 'available') {
+    const mergedSlot = await mergeAdjacentAvailableSlots({
+      daySlots,
+      startMinute: value.startMinute,
+      endMinute: value.endMinute,
+      dayDateUtc,
+      detail: value.detail,
+    });
 
-  if (mergedSlot) {
-    return success(res, toPublicSlot(mergedSlot.toObject(), true), 'Bloque disponible actualizado.');
+    if (mergedSlot) {
+      return success(res, toPublicSlot(mergedSlot.toObject(), true), 'Bloque disponible actualizado.');
+    }
   }
 
   const startDateTime = minutesToDate(dayDateUtc, value.startMinute);
@@ -266,13 +273,18 @@ const createAvailabilitySlot = async (req, res) => {
     endDateTime,
     startMinute: value.startMinute,
     endMinute: value.endMinute,
-    status: 'available',
+    status: value.slotType === 'group' ? 'group' : 'available',
     adminEmail: req.user.email,
     adminId: req.user.id,
     detail: value.detail,
   });
 
-  return success(res, toPublicSlot(created.toObject(), true), 'Bloque disponible creado.', 201);
+  return success(
+    res,
+    toPublicSlot(created.toObject(), true),
+    value.slotType === 'group' ? 'Clase grupal creada.' : 'Bloque disponible creado.',
+    201
+  );
 };
 
 const reserveSlot = async (req, res) => {
@@ -295,7 +307,9 @@ const reserveSlot = async (req, res) => {
 
   const daySlots = await getExistingDaySlots(dateKey);
   const availableSlots = daySlots.filter((slot) => slot.status === 'available');
-  const blockingSlots = daySlots.filter((slot) => slot.status === 'pending' || slot.status === 'booked');
+  const blockingSlots = daySlots.filter(
+    (slot) => slot.status === 'pending' || slot.status === 'booked' || slot.status === 'group'
+  );
 
   const coveringAvailable = availableSlots.find((slot) =>
     canReserveInsideAvailable({ availableSlot: slot, startMinute: value.startMinute, endMinute: value.endMinute })
@@ -316,7 +330,7 @@ const reserveSlot = async (req, res) => {
     intersects(value.startMinute, value.endMinute, slot.startMinute, slot.endMinute)
   );
   if (hasBlockedCollision) {
-    return error(res, 'El horario solicitado ya esta en proceso o reservado.', 409);
+    return error(res, 'El horario solicitado ya esta en proceso, reservado o bloqueado por clase grupal.', 409);
   }
 
   const studentOwnedReservedMinutes = daySlots

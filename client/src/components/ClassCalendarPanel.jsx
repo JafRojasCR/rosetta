@@ -36,6 +36,7 @@ const AVAILABLE_RETURN_ANIMATION_MS = 520;
 const MOBILE_POPOVER_BREAKPOINT = 900;
 const AUTO_SCROLL_STEP_PX = window.innerWidth < MOBILE_POPOVER_BREAKPOINT ? 4 / 3 : 8;
 const TOUCH_SELECTION_DELAY_MS = 30;
+const COSTA_RICA_TIMEZONE = 'America/Costa_Rica';
 
 const toIsoDate = (value) => {
   if (!value) return '';
@@ -53,6 +54,35 @@ const buildIsoDate = (year, month, day) => {
   return `${year}-${mm}-${dd}`;
 };
 
+const toIsoDateInTimeZone = (value, timeZone) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+
+  const parts = formatter.formatToParts(date);
+  const year = parts.find((part) => part.type === 'year')?.value;
+  const month = parts.find((part) => part.type === 'month')?.value;
+  const day = parts.find((part) => part.type === 'day')?.value;
+
+  if (!year || !month || !day) return '';
+  return `${year}-${month}-${day}`;
+};
+
+const parseIsoDateParts = (isoDate) => {
+  const [year, month, day] = String(isoDate || '').split('-').map(Number);
+  if (!year || !month || !day) return null;
+  return { year, month, day };
+};
+
+const getCostaRicaTodayIso = () => toIsoDateInTimeZone(new Date(), COSTA_RICA_TIMEZONE);
+
 const minuteToTime = (minute) => {
   const hh = String(Math.floor(minute / 60)).padStart(2, '0');
   const mm = String(minute % 60).padStart(2, '0');
@@ -68,12 +98,14 @@ const minutesForTimeline = () => {
 };
 
 const statusLabel = (status) => {
+  if (status === 'group') return 'Clase grupal';
   if (status === 'booked') return 'Reservado';
   if (status === 'pending') return 'Pendiente';
   return 'Disponible';
 };
 
 const STATUS_PRIORITY = {
+  group: 4,
   booked: 3,
   pending: 2,
   available: 1,
@@ -146,13 +178,21 @@ const ClassCalendarPanel = ({
   deleteSlot,
 }) => {
   const isAdmin = mode === 'admin';
-  const now = new Date();
+  const todayInCostaRicaIso = getCostaRicaTodayIso() || toIsoDate(new Date());
+  const todayInCostaRicaParts = parseIsoDateParts(todayInCostaRicaIso);
+  const fallbackNow = new Date();
   const [isVisible, setIsVisible] = useState(false);
   const [requestDetail, setRequestDetail] = useState('');
+  const [adminAvailabilityDetail, setAdminAvailabilityDetail] = useState('');
 
-  const [selectedDateKey, setSelectedDateKey] = useState(() => toIsoDate(now));
+  const [selectedDateKey, setSelectedDateKey] = useState(() => todayInCostaRicaIso);
   const [monthCursor, setMonthCursor] = useState(
-    () => new Date(now.getFullYear(), now.getMonth(), 1)
+    () =>
+      new Date(
+        todayInCostaRicaParts?.year || fallbackNow.getFullYear(),
+        (todayInCostaRicaParts?.month || fallbackNow.getMonth() + 1) - 1,
+        1
+      )
   );
   const [slots, setSlots] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -276,6 +316,7 @@ const ClassCalendarPanel = ({
     for (let day = 1; day <= daysInMonth; day += 1) {
       const iso = buildIsoDate(year, month, day);
       const slotsForDay = slots.filter((slot) => slot.date === iso);
+      const hasGroup = slotsForDay.some((slot) => slot.status === 'group');
       const hasBooked = slotsForDay.some((slot) => slot.status === 'booked');
       const hasPending = slotsForDay.some((slot) => slot.status === 'pending');
       let hasAvailable = false;
@@ -292,6 +333,7 @@ const ClassCalendarPanel = ({
         empty: false,
         day,
         iso,
+        hasGroup,
         hasAvailable,
         hasBooked,
         hasPending,
@@ -522,6 +564,10 @@ const ClassCalendarPanel = ({
 
       if (nextPopover?.type === 'new-pending') {
         setRequestDetail(String(nextPopover.detail || ''));
+      }
+
+      if (nextPopover?.type === 'new-available') {
+        setAdminAvailabilityDetail(String(nextPopover.detail || ''));
       }
     },
     []
@@ -953,13 +999,18 @@ const ClassCalendarPanel = ({
 
     try {
       if (activePopover.type === 'new-available') {
+        const trimmedDetail = adminAvailabilityDetail.trim();
+        const slotType = trimmedDetail ? 'group' : 'available';
         await createAvailability({
           date: selectedDateKey,
           startMinute: activePopover.startMinute,
           endMinute: activePopover.endMinute,
-          detail: 'Horario habilitado',
+          slotType,
+          detail: trimmedDetail || 'Horario habilitado',
         });
-        setMessage('Bloque disponible creado.');
+        setMessage(
+          slotType === 'group' ? 'Clase grupal creada en el calendario.' : 'Bloque disponible creado.'
+        );
       }
 
       if (activePopover.type === 'new-pending') {
@@ -974,6 +1025,7 @@ const ClassCalendarPanel = ({
 
       resetSelection();
       setRequestDetail('');
+      setAdminAvailabilityDetail('');
       closePopover();
       await loadSlots();
     } catch (requestError) {
@@ -1197,6 +1249,7 @@ const ClassCalendarPanel = ({
                       {cell.day}
                     </button>
                     <div className="h-2 mt-1 flex gap-1">
+                      {cell.hasGroup && <span className="w-1.5 h-1.5 rounded-full bg-violet-500" />}
                       {cell.hasBooked && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
                       {cell.hasPending && <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />}
                       {cell.hasAvailable && <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />}
@@ -1230,7 +1283,9 @@ const ClassCalendarPanel = ({
                     <div className="flex justify-between items-center mb-1">
                       <span
                         className={`text-[10px] font-black px-2 py-1 rounded-lg uppercase tracking-wider ${
-                          slot.status === 'booked'
+                          slot.status === 'group'
+                            ? 'bg-violet-500/20 text-violet-300'
+                            : slot.status === 'booked'
                             ? 'bg-emerald-500/20 text-emerald-400'
                             : slot.status === 'pending'
                               ? 'bg-amber-500/20 text-amber-400'
@@ -1247,9 +1302,13 @@ const ClassCalendarPanel = ({
                       {isAdmin
                         ? slot.student?.email
                           ? `${slot.student.name || ''} ${slot.student.lastName || ''}`.trim() || slot.student.email
-                          : 'Bloque disponible'
+                          : slot.status === 'group'
+                            ? 'Clase grupal'
+                            : 'Bloque disponible'
                         : slot.status === 'available'
                           ? 'Disponible'
+                          : slot.status === 'group'
+                            ? 'Clase grupal'
                           : statusLabel(slot.status)}
                     </p>
                     <p className="text-xs text-slate-400 mt-1">{slot.detail || '-'}</p>
@@ -1331,7 +1390,9 @@ const ClassCalendarPanel = ({
                           shouldPaintStudentGreen
                             ? 'bg-emerald-100 border-[3px] border-emerald-500 border-dashed ring-[5px] ring-emerald-200/60'
                             : slot
-                            ? slot.status === 'booked'
+                            ? slot.status === 'group'
+                              ? `bg-violet-500 border-[3px] border-violet-600 ring-[5px] ring-violet-300/40 ${isPopoverActive ? 'ring-violet-400/60' : ''}`
+                              : slot.status === 'booked'
                               ? `bg-emerald-500 border-[3px] border-emerald-600 ring-[5px] ring-blue-300/40 ${isPopoverActive ? 'ring-blue-400/60' : ''}`
                               : slot.status === 'pending'
                                 ? `bg-amber-500 border-[3px] border-amber-600 ring-[5px] ring-blue-300/40 ${isPopoverActive ? 'ring-blue-400/60' : ''}`
@@ -1368,6 +1429,9 @@ const ClassCalendarPanel = ({
                 </span>
                 <span className="flex items-center gap-1.5 text-amber-500">
                   <span className="w-2 h-2 rounded-full bg-amber-500" /> Pendiente
+                </span>
+                <span className="flex items-center gap-1.5 text-violet-500">
+                  <span className="w-2 h-2 rounded-full bg-violet-500" /> Clase grupal
                 </span>
                 <span className="flex items-center gap-1.5 text-blue-500">
                   <span className="w-2 h-2 rounded-full bg-blue-500" /> Disponible
@@ -1508,6 +1572,26 @@ const ClassCalendarPanel = ({
                       maxLength={120}
                       className="w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-blue-500"
                     />
+                  </div>
+                )}
+
+                {activePopover.type === 'new-available' && isAdmin && (
+                  <div className="space-y-2">
+                    <label htmlFor="admin-availability-detail" className="text-xs font-black uppercase tracking-widest text-slate-400">
+                      Detalle para clase grupal (opcional)
+                    </label>
+                    <input
+                      id="admin-availability-detail"
+                      type="text"
+                      value={adminAvailabilityDetail}
+                      onChange={(event) => setAdminAvailabilityDetail(event.target.value)}
+                      placeholder="Ej. Práctica de Examen"
+                      maxLength={140}
+                      className="w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-violet-500"
+                    />
+                    <p className="text-xs text-slate-500">
+                      Si escribes un detalle, el bloque se publicara como clase grupal en morado.
+                    </p>
                   </div>
                 )}
 

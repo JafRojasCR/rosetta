@@ -242,6 +242,44 @@ const isProbablyDetailValue = (value = '') => {
   return true;
 };
 
+const isGenericDetailPlaceholder = (value = '') => {
+  const normalized = normalizeText(value);
+  if (!normalized) return true;
+
+  // Common section titles that are not the real payment detail.
+  if (/^(DE|DEL|LA|EL|LOS|LAS)\s+TRANSACCION$/.test(normalized)) return true;
+  if (/^TRANSACCION$/.test(normalized)) return true;
+  if (/^DETALLE\s+DE\s+LA\s+TRANSACCION$/.test(normalized)) return true;
+  if (/^INFORMACION\s+DE\s+LA\s+TRANSACCION$/.test(normalized)) return true;
+  if (/^DATOS\s+DE\s+LA\s+TRANSACCION$/.test(normalized)) return true;
+
+  return false;
+};
+
+const isLikelyPlatformAmount = (amount = null) => {
+  if (!Number.isFinite(amount)) return false;
+  if (amount < 500) return false;
+  // Business rule: expected class amounts end with two zeros.
+  return amount % 100 === 0;
+};
+
+const normalizeForCodeCompare = (value = '') =>
+  normalizeText(value)
+    .replace(/[\s\-_.:/]/g, '')
+    .replace(/O/g, '0');
+
+const hasExpectedClassCodeInAnyLine = (text = '', expectedCode = '') => {
+  const expected = normalizeForCodeCompare(expectedCode);
+  if (!expected) return false;
+
+  const lines = String(text)
+    .split(/\n+/)
+    .map((line) => cleanupSpaces(line))
+    .filter(Boolean);
+
+  return lines.some((line) => normalizeForCodeCompare(line).includes(expected));
+};
+
 const isProbablyRecipientValue = (value = '') => {
   const normalized = normalizeText(value);
   if (!normalized) return false;
@@ -335,7 +373,7 @@ const extractDetail = (text = '') => {
       const detailMatch = normalizedLine.match(/(DETALLE|CONCEPTO|MOTIVO|DESCRIPCION|MENSAJE)[\s:#-]*(.*)$/);
       if (detailMatch?.[2]) {
         const value = cleanupSpaces(detailMatch[2]);
-        if (value && isProbablyDetailValue(value)) return value;
+        if (value && isProbablyDetailValue(value) && !isGenericDetailPlaceholder(value)) return value;
       }
 
       const isConceptLabel = /CONCEPTO/.test(normalizedLine);
@@ -349,7 +387,8 @@ const extractDetail = (text = '') => {
         isConceptLabel &&
         previousLine &&
         !/(FECHA|HORA|MONTO|COMISION|REFERENCIA|COMPROBANTE|DESTINATARIO|BENEFICIARIO)/.test(normalizedPrevious) &&
-        isProbablyDetailValue(previousLine)
+        isProbablyDetailValue(previousLine) &&
+        !isGenericDetailPlaceholder(previousLine)
       ) {
         return cleanupSpaces(previousLine);
       }
@@ -357,7 +396,8 @@ const extractDetail = (text = '') => {
       if (
         nextLine &&
         !/(FECHA|HORA|MONTO|COMISION|REFERENCIA|COMPROBANTE|DESTINATARIO|BENEFICIARIO)/.test(normalizedNext) &&
-        isProbablyDetailValue(nextLine)
+        isProbablyDetailValue(nextLine) &&
+        !isGenericDetailPlaceholder(nextLine)
       ) {
         return cleanupSpaces(nextLine);
       }
@@ -365,7 +405,8 @@ const extractDetail = (text = '') => {
       if (
         previousLine &&
         !/(FECHA|HORA|MONTO|COMISION|REFERENCIA|COMPROBANTE|DESTINATARIO|BENEFICIARIO)/.test(normalizedPrevious) &&
-        isProbablyDetailValue(previousLine)
+        isProbablyDetailValue(previousLine) &&
+        !isGenericDetailPlaceholder(previousLine)
       ) {
         return cleanupSpaces(previousLine);
       }
@@ -399,6 +440,7 @@ const extractAmount = (text = '', expectedAmount = null) => {
       for (const variant of tokenVariants) {
         const parsed = parseAmountCandidate(variant);
         if (isInvalidAmountToken({ rawToken: variant, parsedAmount: parsed, line })) continue;
+        if (!isLikelyPlatformAmount(parsed)) continue;
 
         let score = 0;
         if (amountKeywords.test(line)) score += 8;
@@ -446,6 +488,7 @@ const extractAmount = (text = '', expectedAmount = null) => {
       for (const variant of variants) {
         const parsed = parseAmountCandidate(variant);
         if (isInvalidAmountToken({ rawToken: variant, parsedAmount: parsed, line })) continue;
+        if (!isLikelyPlatformAmount(parsed)) continue;
         if (expected !== null) {
           const diff = Math.abs(parsed - expected);
           if (diff <= Math.max(5, Math.round(expected * 0.02))) return parsed;
@@ -678,6 +721,10 @@ const validateExtractedPayment = ({ extractedData, classCode, classPrice }) => {
   const normalizedSource = normalizeText(
     `${extractedData?.normalizedText || ''} ${extractedData?.detail || ''}`
   ).replace(/\s+/g, '');
+  const classCodeFoundByLineScan = hasExpectedClassCodeInAnyLine(
+    extractedData?.rawText || extractedData?.normalizedText || '',
+    classCode
+  );
 
   const hasDate = Boolean(extractedData?.date);
   const expectedClassPrice = Number(classPrice);
@@ -691,7 +738,9 @@ const validateExtractedPayment = ({ extractedData, classCode, classPrice }) => {
   const hasAmount = Number.isFinite(resolvedAmount);
   const amountMatches = hasAmount && Number(resolvedAmount) === expectedClassPrice;
   const detailMatches = expectedCode
-    ? normalizedSource.includes(expectedCode) || detectedClassCode === expectedCode
+    ? normalizedSource.includes(expectedCode) ||
+      detectedClassCode === expectedCode ||
+      classCodeFoundByLineScan
     : false;
   const recipientMatches = isAllowedRecipient(
     `${extractedData?.recipient || ''} ${extractedData?.normalizedText || ''}`
@@ -725,6 +774,7 @@ const validateExtractedPayment = ({ extractedData, classCode, classPrice }) => {
       classCode: extractedData?.classCode || null,
       detail: extractedData?.detail || null,
       recipient: extractedData?.recipient || null,
+      classCodeFoundByLineScan,
     },
     checks,
     errors,

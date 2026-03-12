@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-const slotStatuses = ['available', 'pending', 'booked'];
+const slotStatuses = ['available', 'pending', 'booked', 'group'];
 
 const classCalendarSlotSchema = new mongoose.Schema(
   {
