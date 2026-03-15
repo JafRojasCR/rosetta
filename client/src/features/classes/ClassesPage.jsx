@@ -472,9 +472,7 @@ const ClassesPage = () => {
                           className="absolute top-3 right-3 bg-white p-2 rounded-xl shadow-lg hover:scale-105 transition-transform"
                           title="Abrir Canva"
                         >
-                          {loadingCanvaByClass[cls.classCode] ? (
-                            <span className="text-[10px] font-black text-gray-500 px-1"></span>
-                          ) : null}
+                          {/* intentionally no loading indicator to avoid visual animation on touch */}
                           <img src="/canvaicon.png" alt="Canva" className="w-7 h-7 object-contain" />
                         </a>
                       )}
