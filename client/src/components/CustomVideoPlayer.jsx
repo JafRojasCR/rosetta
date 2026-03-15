@@ -23,6 +23,7 @@ const CustomVideoPlayer = ({ src, title = 'Video', className = '' }) => {
   const containerRef = useRef(null);
   const videoRef = useRef(null);
   const hideControlsTimeoutRef = useRef(null);
+  const isInteractingRef = useRef(false);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
@@ -56,15 +57,35 @@ const CustomVideoPlayer = ({ src, title = 'Video', className = '' }) => {
       return;
     }
 
+    if (isInteractingRef.current) return;
+
     hideControlsTimeoutRef.current = setTimeout(() => {
       setAreControlsVisible(false);
       hideControlsTimeoutRef.current = null;
-    }, 2000);
+    }, 1500);
   };
 
   const revealControls = () => {
     setAreControlsVisible(true);
     scheduleHideControls();
+  };
+
+  const handlePointerDown = (event) => {
+    isInteractingRef.current = true;
+    setAreControlsVisible(true);
+    clearHideControlsTimeout();
+    const containerNode = containerRef.current;
+    containerNode?.focus({ preventScroll: true });
+  };
+
+  const handlePointerUp = () => {
+    isInteractingRef.current = false;
+    scheduleHideControls();
+  };
+
+  const handleClick = () => {
+    // Single click/tap should reveal controls (and let auto-hide manage visibility)
+    revealControls();
   };
 
   useEffect(() => {
@@ -214,19 +235,7 @@ const CustomVideoPlayer = ({ src, title = 'Video', className = '' }) => {
   };
 
   const handleVideoSurfaceTap = () => {
-    const containerNode = containerRef.current;
-    containerNode?.focus({ preventScroll: true });
-
-    if (!isDesktop && isPlaying) {
-      if (areControlsVisible) {
-        clearHideControlsTimeout();
-        setAreControlsVisible(false);
-      } else {
-        revealControls();
-      }
-      return;
-    }
-
+    // kept for backwards compatibility with any handlers that reference it
     revealControls();
   };
 
@@ -288,6 +297,9 @@ const CustomVideoPlayer = ({ src, title = 'Video', className = '' }) => {
       className={`relative w-full h-full bg-slate-900 ${className}`.trim()}
       tabIndex={0}
       onMouseMove={handlePlayerInteraction}
+      onPointerDown={handlePointerDown}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
     >
       <video
         ref={videoRef}
@@ -299,8 +311,10 @@ const CustomVideoPlayer = ({ src, title = 'Video', className = '' }) => {
         controlsList="nodownload noplaybackrate noremoteplayback nofullscreen"
         disablePictureInPicture
         playsInline
-        onClick={handleVideoSurfaceTap}
-        onTouchStart={handleVideoSurfaceTap}
+        onClick={handleClick}
+        onPointerDown={handlePointerDown}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
       />
 
       <div
@@ -332,6 +346,9 @@ const CustomVideoPlayer = ({ src, title = 'Video', className = '' }) => {
             handleSeek(event);
             revealControls();
           }}
+          onPointerDown={handlePointerDown}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
           style={buildRangeTrack(progressRatio, '#3b82f6', '#374151')}
           className="flex-1 min-w-0 h-1.5 rounded-full appearance-none cursor-pointer bg-gray-700 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-blue-500 [&::-webkit-slider-thumb]:cursor-pointer"
           aria-label="Progreso del video"
@@ -357,6 +374,9 @@ const CustomVideoPlayer = ({ src, title = 'Video', className = '' }) => {
               handleVolumeChange(event);
               revealControls();
             }}
+            onPointerDown={handlePointerDown}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
             style={buildRangeTrack(volume * 100, '#3b82f6', '#374151')}
             className="w-[68px] h-1.5 rounded-full appearance-none cursor-pointer bg-gray-700 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-blue-500 [&::-webkit-slider-thumb]:cursor-pointer"
             aria-label="Volumen del video"
