@@ -69,6 +69,7 @@ const DocumentsPage = () => {
   const [viewerTitle, setViewerTitle] = useState('');
   const [viewerType, setViewerType] = useState('');
   const [viewerUrl, setViewerUrl] = useState('');
+  const [viewerAccessUrl, setViewerAccessUrl] = useState('');
   const [descriptionDialogOpen, setDescriptionDialogOpen] = useState(false);
   const [descriptionDialogTitle, setDescriptionDialogTitle] = useState('');
   const [descriptionDialogText, setDescriptionDialogText] = useState('');
@@ -76,6 +77,7 @@ const DocumentsPage = () => {
   const [descriptionDialogClosing, setDescriptionDialogClosing] = useState(false);
   const viewerCloseTimerRef = useRef(null);
   const descriptionCloseTimerRef = useRef(null);
+  const pdfObjectUrlRef = useRef('');
 
   useEffect(() => {
     if (loading) {
@@ -104,6 +106,11 @@ const DocumentsPage = () => {
 
   useEffect(() => {
     return () => {
+      if (pdfObjectUrlRef.current) {
+        URL.revokeObjectURL(pdfObjectUrlRef.current);
+        pdfObjectUrlRef.current = '';
+      }
+
       if (viewerCloseTimerRef.current) {
         clearTimeout(viewerCloseTimerRef.current);
       }
@@ -131,12 +138,18 @@ const DocumentsPage = () => {
     }
 
     viewerCloseTimerRef.current = setTimeout(() => {
+      if (pdfObjectUrlRef.current) {
+        URL.revokeObjectURL(pdfObjectUrlRef.current);
+        pdfObjectUrlRef.current = '';
+      }
+
       setViewerOpen(false);
       setViewerLoading(false);
       setViewerError('');
       setViewerTitle('');
       setViewerType('');
       setViewerUrl('');
+      setViewerAccessUrl('');
       setViewerClosing(false);
       viewerCloseTimerRef.current = null;
     }, MODAL_EXIT_ANIMATION_MS);
@@ -151,7 +164,13 @@ const DocumentsPage = () => {
     setViewerTitle(resource.title || 'Recurso');
     setViewerType(resource.type || 'pdf');
     setViewerUrl('');
+    setViewerAccessUrl('');
     setViewerClosing(false);
+
+    if (pdfObjectUrlRef.current) {
+      URL.revokeObjectURL(pdfObjectUrlRef.current);
+      pdfObjectUrlRef.current = '';
+    }
 
     try {
       if (resource.type === 'video') {
@@ -162,6 +181,7 @@ const DocumentsPage = () => {
         if (!accessUrl) {
           throw new Error('No se pudo preparar el acceso al video.');
         }
+        setViewerAccessUrl(accessUrl);
         setViewerUrl(accessUrl);
       } else {
         const accessResponse = await api.get(`/documents/${resource.id}/access-url`, {
@@ -171,7 +191,18 @@ const DocumentsPage = () => {
         if (!accessUrl) {
           throw new Error('No se pudo preparar el acceso al documento.');
         }
-        setViewerUrl(accessUrl);
+
+        const pdfResponse = await fetch(accessUrl, { method: 'GET' });
+        if (!pdfResponse.ok) {
+          throw new Error('No se pudo descargar temporalmente el PDF para visualizarlo.');
+        }
+
+        const pdfBlob = await pdfResponse.blob();
+        const objectUrl = URL.createObjectURL(pdfBlob);
+
+        pdfObjectUrlRef.current = objectUrl;
+        setViewerAccessUrl(accessUrl);
+        setViewerUrl(objectUrl);
       }
     } catch (requestError) {
       setViewerError(
@@ -497,9 +528,9 @@ const DocumentsPage = () => {
               </div>
 
               <div className="flex items-center gap-2 shrink-0">
-                {viewerType === 'pdf' && viewerUrl && (
+                {viewerType === 'pdf' && viewerAccessUrl && (
                   <a
-                    href={viewerUrl}
+                    href={viewerAccessUrl}
                     target="_blank"
                     rel="noreferrer"
                     className="w-10 h-10 rounded-xl bg-gray-50 hover:bg-blue-600 hover:text-white text-blue-600 transition-colors flex items-center justify-center"
@@ -532,23 +563,12 @@ const DocumentsPage = () => {
                 viewerType === 'video' ? (
                   <CustomVideoPlayer src={viewerUrl} title={`Video ${viewerTitle}`} />
                 ) : (
-                  <object
-                    data={viewerUrl}
-                    type="application/pdf"
-                    className="w-full h-full bg-white"
-                  >
-                    <div className="w-full h-full flex flex-col items-center justify-center gap-4 text-white/90 px-6 text-center">
-                      <p className="font-semibold">No se pudo visualizar el PDF en el visor integrado.</p>
-                      <a
-                        href={viewerUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white text-blue-700 font-black"
-                      >
-                        <ExternalLink size={16} /> Abrir PDF en otra ventana
-                      </a>
-                    </div>
-                  </object>
+                  <iframe
+                    src={viewerUrl}
+                    title={`Documento ${viewerTitle}`}
+                    className="w-full h-full bg-white border-0"
+                    allow="autoplay; fullscreen"
+                  />
                 )
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-white/80 font-semibold">

@@ -9,15 +9,18 @@ import {
   ChevronRight,
   Edit3,
   FileText,
+  DollarSign,
   Link as LinkIcon,
   Plus,
   Save,
   Star,
   Trash2,
   Type,
+  Unlock,
   User,
   Users,
   Video,
+  Wallet,
   X,
 } from 'lucide-react';
 import api from '../../services/api';
@@ -1164,13 +1167,27 @@ const AdminClassesPage = () => {
 
                   <div className="mt-3 text-xs font-semibold text-gray-500 flex flex-wrap gap-x-4 gap-y-1">
                     <span>{cls.subject?.name || 'Sin materia'}</span>
-                    <span>Monto: {cls.price}</span>
-                    <span>
-                      Desbloqueados:{' '}
+                    <span className="inline-flex items-center gap-1" title="Monto">
+                      <DollarSign size={14} className="text-emerald-600" />
+                      {cls.price}
+                    </span>
+                    <span className="inline-flex items-center gap-1" title="Desbloqueados">
+                      <Unlock size={14} className="text-blue-600" />
                       {(cls.classStudents || []).filter((entry) => entry?.unlocked === true).length}
                     </span>
-                    <span>
-                      Tutoría:{' '}
+                    <span className="inline-flex items-center gap-1" title="Recaudado">
+                      <Wallet size={14} className="text-amber-600" />
+                      {(() => {
+                        const unlockedCount = (cls.classStudents || []).filter(
+                          (entry) => entry?.unlocked === true
+                        ).length;
+                        const numericPrice = Number(cls.price);
+                        const safePrice = Number.isFinite(numericPrice) ? numericPrice : 0;
+                        return (unlockedCount * safePrice).toLocaleString('es-CR');
+                      })()}
+                    </span>
+                    <span className="inline-flex items-center gap-1" title="Tutoría">
+                      <User size={14} className="text-violet-600" />
                       {(cls.classStudents || []).some((entry) => entry?.type === 'tutored')
                         ? 'Sí'
                         : 'No'}

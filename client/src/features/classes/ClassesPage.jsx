@@ -178,11 +178,17 @@ const ClassesPage = () => {
 
     setLoadingVideoByClass((prev) => ({ ...prev, [cls.classCode]: true }));
     try {
-      const response = await api.get(`/classes/${cls.classCode}/recording-access`);
-      const accessUrl = response.data?.data?.accessUrl || '';
-      setRecordingAccessUrls((prev) => ({ ...prev, [cls.classCode]: accessUrl }));
+      const tokenResponse = await api.get(`/classes/${cls.classCode}/embed-token`);
+      const token = String(tokenResponse.data?.data?.token || '').trim();
+      if (!token) {
+        throw new Error('No se pudo generar el token de reproducción.');
+      }
+
+      const baseUrl = String(api.defaults.baseURL || '/api').replace(/\/$/, '');
+      const streamUrl = `${baseUrl}/classes/embed/${encodeURIComponent(token)}/stream`;
+      setRecordingAccessUrls((prev) => ({ ...prev, [cls.classCode]: streamUrl }));
     } catch (_requestError) {
-      setError('No se pudo obtener el enlace seguro del video.');
+      setError('No se pudo preparar el acceso protegido del video.');
     } finally {
       setLoadingVideoByClass((prev) => ({ ...prev, [cls.classCode]: false }));
     }

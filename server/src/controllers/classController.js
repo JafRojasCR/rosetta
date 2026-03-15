@@ -1,6 +1,7 @@
 const Class = require('../models/Class');
 const Payment = require('../models/Payment');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const path = require('path');
 const { success, error } = require('../utils/apiResponse');
 const Joi = require('joi');
@@ -64,6 +65,22 @@ const isClassUnlockedForUser = (cls, userEmail) => {
       entry?.student?.email?.toLowerCase() === normalizedEmail &&
       entry?.unlocked === true
   );
+};
+
+const getRequestIp = (req = {}) => {
+  const forwardedFor = String(req.headers?.['x-forwarded-for'] || '').trim();
+  if (forwardedFor) {
+    const firstForwardedIp = forwardedFor.split(',')[0]?.trim();
+    if (firstForwardedIp) return firstForwardedIp;
+  }
+
+  return String(req.ip || req.socket?.remoteAddress || 'unknown-ip');
+};
+
+const getRequestFingerprint = (req = {}) => {
+  const userAgent = String(req.headers?.['user-agent'] || 'unknown-ua');
+  const ip = getRequestIp(req);
+  return crypto.createHash('sha256').update(`${userAgent}|${ip}`).digest('hex');
 };
 
 const buildSecurePlayerHtml = (streamUrl) => `<!doctype html>
@@ -363,10 +380,20 @@ const buildSecurePlayerHtml = (streamUrl) => `<!doctype html>
   </body>
 </html>`;
 
-const resolveEmbedContext = async (token) => {
+const resolveEmbedContext = async (token, req) => {
   const decoded = jwt.verify(token, jwtSecret);
   if (decoded?.type !== 'class_embed' || !decoded?.classCode) {
     return { denied: true, code: 403, message: 'Acceso no permitido.' };
+  }
+
+  const expectedFingerprint = String(decoded.fingerprint || '').trim();
+  if (!expectedFingerprint) {
+    return { denied: true, code: 403, message: 'Token de reproducción inválido.' };
+  }
+
+  const requestFingerprint = getRequestFingerprint(req);
+  if (expectedFingerprint !== requestFingerprint) {
+    return { denied: true, code: 403, message: 'Token de reproducción no válido para este dispositivo.' };
   }
 
   const cls = await Class.findOne({ classCode: decoded.classCode });
@@ -998,6 +1025,7 @@ const getClassEmbedToken = async (req, res) => {
         classCode: cls.classCode,
         email: req.user?.email || '',
         role: req.user?.role || 'student',
+        fingerprint: getRequestFingerprint(req),
       },
       jwtSecret,
       { expiresIn: '3h' }
@@ -1012,7 +1040,7 @@ const getClassEmbedToken = async (req, res) => {
 // GET /api/classes/embed/:token
 const getClassEmbedByToken = async (req, res) => {
   try {
-    const context = await resolveEmbedContext(req.params.token);
+    const context = await resolveEmbedContext(req.params.token, req);
     if (context.denied) {
       return res.status(context.code).send(context.message);
     }
@@ -1031,7 +1059,7 @@ const getClassEmbedByToken = async (req, res) => {
 // GET /api/classes/embed/:token/stream
 const getClassEmbedStreamByToken = async (req, res) => {
   try {
-    const context = await resolveEmbedContext(req.params.token);
+    const context = await resolveEmbedContext(req.params.token, req);
     if (context.denied) {
       return res.status(context.code).send(context.message);
     }

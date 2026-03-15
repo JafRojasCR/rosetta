@@ -98,6 +98,48 @@ const CustomVideoPlayer = ({ src, title = 'Video', className = '' }) => {
   }, []);
 
   useEffect(() => {
+    const containerNode = containerRef.current;
+    const videoNode = videoRef.current;
+    if (!containerNode || !videoNode) return undefined;
+
+    const preventContextActions = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    };
+
+    const preventRightMouseDown = (event) => {
+      if (event.button === 2) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+
+    const preventTouchCallout = (event) => {
+      if (event.cancelable) {
+        event.preventDefault();
+      }
+      event.stopPropagation();
+    };
+
+    const options = { capture: true };
+    const touchOptions = { capture: true, passive: false };
+
+    containerNode.addEventListener('contextmenu', preventContextActions, options);
+    videoNode.addEventListener('contextmenu', preventContextActions, options);
+    videoNode.addEventListener('mousedown', preventRightMouseDown, options);
+    videoNode.addEventListener('touchstart', preventTouchCallout, touchOptions);
+    videoNode.addEventListener('touchend', preventContextActions, options);
+
+    return () => {
+      containerNode.removeEventListener('contextmenu', preventContextActions, options);
+      videoNode.removeEventListener('contextmenu', preventContextActions, options);
+      videoNode.removeEventListener('mousedown', preventRightMouseDown, options);
+      videoNode.removeEventListener('touchstart', preventTouchCallout, touchOptions);
+      videoNode.removeEventListener('touchend', preventContextActions, options);
+    };
+  }, []);
+
+  useEffect(() => {
     setIsPlaying(false);
     setCurrentTime(0);
     setDuration(0);
@@ -162,6 +204,7 @@ const CustomVideoPlayer = ({ src, title = 'Video', className = '' }) => {
         src={src}
         title={title}
         className="w-full h-full object-contain bg-slate-900"
+        style={{ WebkitTouchCallout: 'none', userSelect: 'none', WebkitUserSelect: 'none' }}
         preload="metadata"
         controlsList="nodownload noplaybackrate noremoteplayback nofullscreen"
         disablePictureInPicture
