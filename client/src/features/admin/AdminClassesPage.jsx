@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -17,11 +18,15 @@ import {
   User,
   Users,
   Video,
+  X,
 } from 'lucide-react';
 import api from '../../services/api';
 import CustomSelectMenu from '../../components/CustomSelectMenu';
 import FloatingCalendarButton from '../../components/FloatingCalendarButton';
+import CustomVideoPlayer from '../../components/CustomVideoPlayer';
 import { uploadToSignedUrl } from '../../services/directUpload';
+
+const MODAL_EXIT_ANIMATION_MS = 220;
 
 const toDateInputValue = (value) => {
   if (!value) return '';
@@ -143,11 +148,28 @@ const AdminClassesPage = () => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
   });
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [viewerLoading, setViewerLoading] = useState(false);
+  const [viewerError, setViewerError] = useState('');
+  const [viewerTitle, setViewerTitle] = useState('');
+  const [viewerUrl, setViewerUrl] = useState('');
+  const [viewerClosing, setViewerClosing] = useState(false);
+  const [loadingVideoByClass, setLoadingVideoByClass] = useState({});
   const datePickerRef = useRef(null);
+  const viewerCloseTimerRef = useRef(null);
+  const canUseDom = typeof document !== 'undefined';
 
   useEffect(() => {
     const id = requestAnimationFrame(() => setIsVisible(true));
     return () => cancelAnimationFrame(id);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (viewerCloseTimerRef.current) {
+        clearTimeout(viewerCloseTimerRef.current);
+      }
+    };
   }, []);
 
   const loadClasses = async (params = {}) => {
@@ -634,6 +656,58 @@ const AdminClassesPage = () => {
     }
   };
 
+  const closeViewer = () => {
+    if (!viewerOpen || viewerClosing) return;
+    setViewerClosing(true);
+
+    if (viewerCloseTimerRef.current) {
+      clearTimeout(viewerCloseTimerRef.current);
+    }
+
+    viewerCloseTimerRef.current = setTimeout(() => {
+      setViewerOpen(false);
+      setViewerLoading(false);
+      setViewerError('');
+      setViewerTitle('');
+      setViewerUrl('');
+      setViewerClosing(false);
+      viewerCloseTimerRef.current = null;
+    }, MODAL_EXIT_ANIMATION_MS);
+  };
+
+  const openVideoViewer = async (cls) => {
+    if (!cls?.classCode) return;
+
+    setLoadingVideoByClass((prev) => ({ ...prev, [cls.classCode]: true }));
+    setViewerOpen(true);
+    setViewerLoading(true);
+    setViewerError('');
+    setViewerTitle(cls.title || `Clase ${cls.classCode}`);
+    setViewerUrl('');
+    setViewerClosing(false);
+
+    try {
+      const tokenResponse = await api.get(`/classes/${cls.classCode}/embed-token`);
+      const token = String(tokenResponse.data?.data?.token || '').trim();
+      if (!token) {
+        throw new Error('No se pudo generar el token de reproducción.');
+      }
+
+      const baseUrl = String(api.defaults.baseURL || '/api').replace(/\/$/, '');
+      const streamUrl = `${baseUrl}/classes/embed/${encodeURIComponent(token)}/stream`;
+      setViewerUrl(streamUrl);
+    } catch (requestError) {
+      setViewerError(
+        requestError.response?.data?.message ||
+          requestError.message ||
+          'No se pudo abrir el video de esta clase.'
+      );
+    } finally {
+      setViewerLoading(false);
+      setLoadingVideoByClass((prev) => ({ ...prev, [cls.classCode]: false }));
+    }
+  };
+
   return (
     <div
       className={`min-h-screen bg-gray-100 font-['Poppins'] flex flex-col transition-all duration-700 ease-out ${
@@ -1017,21 +1091,22 @@ const AdminClassesPage = () => {
             </span>
           </div>
 
-          {loading ? (
-            <div className="bg-white rounded-[2rem] p-6 border border-gray-100 text-gray-500 font-medium">
-              Cargando clases...
-            </div>
-          ) : classes.length === 0 ? (
-            <div className="bg-white rounded-[2rem] p-6 border border-gray-100 text-gray-500 font-medium">
-              No hay clases registradas.
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {classes.map((cls) => (
-                <div
-                  key={cls.classCode}
-                  className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm"
-                >
+          <div className="bg-white rounded-[2rem] p-4 border border-gray-100 shadow-sm">
+            <div className="space-y-3 max-h-[55vh] sm:max-h-[80vh] overflow-y-auto pr-1">
+              {loading ? (
+                <div className="rounded-2xl p-6 border border-gray-100 bg-gray-50 text-gray-500 font-medium">
+                  Cargando clases...
+                </div>
+              ) : classes.length === 0 ? (
+                <div className="rounded-2xl p-6 border border-gray-100 bg-gray-50 text-gray-500 font-medium">
+                  No hay clases registradas.
+                </div>
+              ) : (
+                classes.map((cls) => (
+                  <div
+                    key={cls.classCode}
+                    className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm"
+                  >
                   {(() => {
                     const rating = calculateStarRating(cls.classStudents || []);
                     const filledStars = rating === null ? 0 : Math.round(rating);
@@ -1104,14 +1179,14 @@ const AdminClassesPage = () => {
 
                   <div className="mt-3 flex flex-wrap gap-2">
                     {cls.recordingUrl && (
-                      <a
-                        href={cls.recordingUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="px-3 py-1.5 rounded-lg text-xs font-black bg-blue-50 text-blue-600"
+                      <button
+                        type="button"
+                        onClick={() => openVideoViewer(cls)}
+                        disabled={Boolean(loadingVideoByClass[cls.classCode])}
+                        className="px-3 py-1.5 rounded-lg text-xs font-black bg-blue-50 text-blue-600 disabled:opacity-60"
                       >
-                        Ver video
-                      </a>
+                        {loadingVideoByClass[cls.classCode] ? 'Preparando video...' : 'Ver video'}
+                      </button>
                     )}
                     {cls.canvaUrl && (
                       <a
@@ -1124,13 +1199,75 @@ const AdminClassesPage = () => {
                       </a>
                     )}
                   </div>
-                </div>
-              ))}
+                  </div>
+                ))
+              )}
             </div>
-          )}
+          </div>
 
         </section>
       </main>
+
+      {canUseDom &&
+        createPortal(
+          viewerOpen ? (
+            <div
+              onClick={(event) => {
+                if (event.target === event.currentTarget) {
+                  closeViewer();
+                }
+              }}
+              className={`fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm p-3 sm:p-6 flex items-center justify-center transition-opacity duration-200 ${
+                viewerClosing ? 'opacity-0' : 'opacity-100'
+              }`}
+            >
+              <div
+                className={`w-full max-w-6xl h-[96vh] bg-white rounded-3xl sm:rounded-[2.5rem] shadow-2xl border border-gray-100 flex flex-col overflow-hidden transition-all duration-200 ${
+                  viewerClosing
+                    ? 'opacity-0 scale-[0.985] translate-y-2'
+                    : 'opacity-100 scale-100 translate-y-0'
+                }`}
+              >
+                <div className="px-4 sm:px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                      Visualizador de video
+                    </p>
+                    <h3 className="text-sm sm:text-lg font-black text-gray-900 truncate">{viewerTitle}</h3>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={closeViewer}
+                    className="w-10 h-10 rounded-xl bg-gray-50 hover:bg-red-600 hover:text-white text-gray-600 transition-colors flex items-center justify-center"
+                    title="Cerrar"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <div className="flex-1 min-h-0 bg-gray-900/95">
+                  {viewerLoading ? (
+                    <div className="w-full h-full flex items-center justify-center text-white font-bold">
+                      Cargando visualizador...
+                    </div>
+                  ) : viewerError ? (
+                    <div className="w-full h-full flex items-center justify-center px-6 text-center text-red-200 font-semibold">
+                      {viewerError}
+                    </div>
+                  ) : viewerUrl ? (
+                    <CustomVideoPlayer src={viewerUrl} title={`Video ${viewerTitle}`} />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-white/80 font-semibold">
+                      Video no disponible.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : null,
+          document.body
+        )}
 
       <FloatingCalendarButton onClick={() => navigate('/admin/calendario')} />
 

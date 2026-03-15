@@ -45,6 +45,10 @@ const extractGoogleDriveFileId = (url = '') => {
 const isGcsClassObject = (provider = '', objectKey = '') =>
   String(provider || '').toLowerCase() === 'gcs' && Boolean(String(objectKey || '').trim());
 
+const hasClassRecording = (cls = {}) =>
+  isGcsClassObject(cls.recordingStorageProvider, cls.recordingStorageObjectKey) ||
+  Boolean(String(cls.recordingUrl || '').trim());
+
 const buildClassRecordingAccessApiUrl = (classCode = '') =>
   `/api/classes/${encodeURIComponent(String(classCode || ''))}/recording-access`;
 
@@ -450,7 +454,11 @@ const getClasses = async (req, res) => {
             isPublic: 1,
             price: 1,
             recordingUrl: 1,
+            recordingStorageProvider: 1,
+            recordingStorageObjectKey: 1,
             canvaUrl: 1,
+            canvaStorageProvider: 1,
+            canvaStorageObjectKey: 1,
             subject: 1,
             adminEmail: 1,
             classStudents: 1,
@@ -980,7 +988,7 @@ const getClassEmbedToken = async (req, res) => {
       return error(res, 'Clase bloqueada para este estudiante.', 403);
     }
 
-    if (!cls.recordingUrl) {
+    if (!hasClassRecording(cls)) {
       return error(res, 'Esta clase no tiene video disponible.', 404);
     }
 
@@ -1009,7 +1017,7 @@ const getClassEmbedByToken = async (req, res) => {
       return res.status(context.code).send(context.message);
     }
 
-    if (!context.cls.recordingUrl) return res.status(404).send('Video no disponible.');
+    if (!hasClassRecording(context.cls)) return res.status(404).send('Video no disponible.');
 
     const streamUrl = `/api/classes/embed/${req.params.token}/stream`;
 
@@ -1028,15 +1036,17 @@ const getClassEmbedStreamByToken = async (req, res) => {
       return res.status(context.code).send(context.message);
     }
 
-    const recordingUrl = context.cls.recordingUrl || '';
-    if (!recordingUrl) return res.status(404).send('Video no disponible.');
+    const recordingUrl = String(context.cls.recordingUrl || '').trim();
+    const hasGcsRecording = isGcsClassObject(
+      context.cls.recordingStorageProvider,
+      context.cls.recordingStorageObjectKey
+    );
 
-    if (
-      isGcsClassObject(
-        context.cls.recordingStorageProvider,
-        context.cls.recordingStorageObjectKey
-      )
-    ) {
+    if (!hasGcsRecording && !recordingUrl) {
+      return res.status(404).send('Video no disponible.');
+    }
+
+    if (hasGcsRecording) {
       const signed = await getSignedDownloadUrl({
         objectKey: context.cls.recordingStorageObjectKey,
         inline: true,
