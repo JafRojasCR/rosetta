@@ -718,7 +718,28 @@ const AdminClassesPage = () => {
       }`}
     >
       <style>
-        {`@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap');`}
+        {`
+          @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap');
+
+          /* Animated edit button when a class is being edited */
+          .edit-active {
+            animation: editColorPulse 900ms infinite alternate;
+            box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.08);
+          }
+
+          @keyframes editColorPulse {
+            from {
+              background-color: #ecfdf5; /* emerald-50 */
+              color: #059669; /* emerald-600 */
+              transform: scale(1);
+            }
+            to {
+              background-color: #10b981; /* emerald-500 */
+              color: #ffffff;
+              transform: scale(1.06);
+            }
+          }
+        `}
       </style>
 
       <nav className="bg-white px-4 sm:px-8 py-4 flex items-center justify-between gap-3 shadow-sm">
@@ -1148,7 +1169,12 @@ const AdminClassesPage = () => {
                       <button
                         type="button"
                         onClick={() => startEdit(cls)}
-                        className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 flex items-center justify-center"
+                        className={
+                          `w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-300 ` +
+                          (isEditing && editingClassCode === cls.classCode
+                            ? 'bg-emerald-50 text-emerald-600 edit-active'
+                            : 'bg-blue-50 text-blue-600 hover:bg-blue-100')
+                        }
                         title="Editar"
                       >
                         <Edit3 size={16} />
