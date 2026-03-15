@@ -354,7 +354,7 @@ const CustomVideoPlayer = ({ src, title = 'Video', className = '' }) => {
           aria-label="Progreso del video"
         />
 
-        <span className="hidden md:block min-w-[96px] text-center text-[11px] font-bold text-gray-300">
+        <span className={`${isDesktop || isFullscreen ? 'block' : 'hidden'} md:block min-w-[96px] text-center text-[11px] font-bold text-gray-300`}>
           {toTime(currentTime)} / {toTime(duration)}
         </span>
 

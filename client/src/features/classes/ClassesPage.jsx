@@ -473,7 +473,7 @@ const ClassesPage = () => {
                           title="Abrir Canva"
                         >
                           {loadingCanvaByClass[cls.classCode] ? (
-                            <span className="text-[10px] font-black text-gray-500 px-1">...</span>
+                            <span className="text-[10px] font-black text-gray-500 px-1"></span>
                           ) : null}
                           <img src="/canvaicon.png" alt="Canva" className="w-7 h-7 object-contain" />
                         </a>
