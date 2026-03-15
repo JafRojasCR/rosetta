@@ -154,28 +154,16 @@ const CustomVideoPlayer = ({ src, title = 'Video', className = '' }) => {
       }
     };
 
-    const preventTouchCallout = (event) => {
-      if (event.cancelable) {
-        event.preventDefault();
-      }
-      event.stopPropagation();
-    };
-
     const options = { capture: true };
-    const touchOptions = { capture: true, passive: false };
 
     containerNode.addEventListener('contextmenu', preventContextActions, options);
     videoNode.addEventListener('contextmenu', preventContextActions, options);
     videoNode.addEventListener('mousedown', preventRightMouseDown, options);
-    videoNode.addEventListener('touchstart', preventTouchCallout, touchOptions);
-    videoNode.addEventListener('touchend', preventContextActions, options);
 
     return () => {
       containerNode.removeEventListener('contextmenu', preventContextActions, options);
       videoNode.removeEventListener('contextmenu', preventContextActions, options);
       videoNode.removeEventListener('mousedown', preventRightMouseDown, options);
-      videoNode.removeEventListener('touchstart', preventTouchCallout, touchOptions);
-      videoNode.removeEventListener('touchend', preventContextActions, options);
     };
   }, []);
 
@@ -222,6 +210,23 @@ const CustomVideoPlayer = ({ src, title = 'Video', className = '' }) => {
   const handlePlayerInteraction = () => {
     const containerNode = containerRef.current;
     containerNode?.focus({ preventScroll: true });
+    revealControls();
+  };
+
+  const handleVideoSurfaceTap = () => {
+    const containerNode = containerRef.current;
+    containerNode?.focus({ preventScroll: true });
+
+    if (!isDesktop && isPlaying) {
+      if (areControlsVisible) {
+        clearHideControlsTimeout();
+        setAreControlsVisible(false);
+      } else {
+        revealControls();
+      }
+      return;
+    }
+
     revealControls();
   };
 
@@ -283,8 +288,6 @@ const CustomVideoPlayer = ({ src, title = 'Video', className = '' }) => {
       className={`relative w-full h-full bg-slate-900 ${className}`.trim()}
       tabIndex={0}
       onMouseMove={handlePlayerInteraction}
-      onTouchStart={handlePlayerInteraction}
-      onClick={handlePlayerInteraction}
     >
       <video
         ref={videoRef}
@@ -296,7 +299,8 @@ const CustomVideoPlayer = ({ src, title = 'Video', className = '' }) => {
         controlsList="nodownload noplaybackrate noremoteplayback nofullscreen"
         disablePictureInPicture
         playsInline
-        onTouchStart={handlePlayerInteraction}
+        onClick={handleVideoSurfaceTap}
+        onTouchStart={handleVideoSurfaceTap}
       />
 
       <div
