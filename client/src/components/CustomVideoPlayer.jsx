@@ -22,12 +22,14 @@ const buildRangeTrack = (ratio, activeColor, baseColor) => {
 const CustomVideoPlayer = ({ src, title = 'Video', className = '' }) => {
   const containerRef = useRef(null);
   const videoRef = useRef(null);
+  const hideControlsTimeoutRef = useRef(null);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [volume, setVolume] = useState(1);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [areControlsVisible, setAreControlsVisible] = useState(true);
   const [isDesktop, setIsDesktop] = useState(() => {
     if (typeof window === 'undefined') return true;
     return window.matchMedia('(min-width: 768px)').matches;
@@ -39,6 +41,31 @@ const CustomVideoPlayer = ({ src, title = 'Video', className = '' }) => {
   }, [currentTime, duration]);
 
   const showVolumeControls = isDesktop || isFullscreen;
+
+  const clearHideControlsTimeout = () => {
+    if (hideControlsTimeoutRef.current) {
+      clearTimeout(hideControlsTimeoutRef.current);
+      hideControlsTimeoutRef.current = null;
+    }
+  };
+
+  const scheduleHideControls = () => {
+    clearHideControlsTimeout();
+    if (!isPlaying) {
+      setAreControlsVisible(true);
+      return;
+    }
+
+    hideControlsTimeoutRef.current = setTimeout(() => {
+      setAreControlsVisible(false);
+      hideControlsTimeoutRef.current = null;
+    }, 2000);
+  };
+
+  const revealControls = () => {
+    setAreControlsVisible(true);
+    scheduleHideControls();
+  };
 
   useEffect(() => {
     const video = videoRef.current;
@@ -70,6 +97,19 @@ const CustomVideoPlayer = ({ src, title = 'Video', className = '' }) => {
       video.removeEventListener('ended', onEnded);
     };
   }, []);
+
+  useEffect(() => {
+    if (!isPlaying) {
+      clearHideControlsTimeout();
+      setAreControlsVisible(true);
+      return undefined;
+    }
+
+    scheduleHideControls();
+    return () => {
+      clearHideControlsTimeout();
+    };
+  }, [isPlaying]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -143,7 +183,47 @@ const CustomVideoPlayer = ({ src, title = 'Video', className = '' }) => {
     setIsPlaying(false);
     setCurrentTime(0);
     setDuration(0);
+    clearHideControlsTimeout();
+    setAreControlsVisible(true);
   }, [src]);
+
+  useEffect(() => {
+    const onWindowKeyDown = (event) => {
+      if (event.key !== ' ' && event.code !== 'Space') return;
+
+      const activeElement = document.activeElement;
+      if (
+        activeElement &&
+        (activeElement.tagName === 'INPUT' ||
+          activeElement.tagName === 'TEXTAREA' ||
+          activeElement.isContentEditable)
+      ) {
+        return;
+      }
+
+      const containerNode = containerRef.current;
+      if (!containerNode) return;
+
+      const isFocusWithinPlayer = Boolean(activeElement && containerNode.contains(activeElement));
+      if (!isFocusWithinPlayer) return;
+
+      event.preventDefault();
+      togglePlay();
+      revealControls();
+    };
+
+    window.addEventListener('keydown', onWindowKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onWindowKeyDown);
+      clearHideControlsTimeout();
+    };
+  }, [isPlaying]);
+
+  const handlePlayerInteraction = () => {
+    const containerNode = containerRef.current;
+    containerNode?.focus({ preventScroll: true });
+    revealControls();
+  };
 
   const togglePlay = async () => {
     const video = videoRef.current;
@@ -198,23 +278,40 @@ const CustomVideoPlayer = ({ src, title = 'Video', className = '' }) => {
   };
 
   return (
-    <div ref={containerRef} className={`relative w-full h-full bg-slate-900 ${className}`.trim()}>
+    <div
+      ref={containerRef}
+      className={`relative w-full h-full bg-slate-900 ${className}`.trim()}
+      tabIndex={0}
+      onMouseMove={handlePlayerInteraction}
+      onTouchStart={handlePlayerInteraction}
+      onClick={handlePlayerInteraction}
+    >
       <video
         ref={videoRef}
         src={src}
-        title={title}
+        aria-label={title}
         className="w-full h-full object-contain bg-slate-900"
         style={{ WebkitTouchCallout: 'none', userSelect: 'none', WebkitUserSelect: 'none' }}
         preload="metadata"
         controlsList="nodownload noplaybackrate noremoteplayback nofullscreen"
         disablePictureInPicture
         playsInline
+        onTouchStart={handlePlayerInteraction}
       />
 
-      <div className="absolute left-3 right-3 bottom-3 z-20 flex items-center gap-2.5 px-3 py-2.5 rounded-2xl border border-white/20 bg-gradient-to-br from-slate-900/60 to-slate-700/55 backdrop-blur-md">
+      <div
+        className={`absolute left-3 right-3 bottom-3 z-20 flex items-center gap-2.5 px-3 py-2.5 rounded-2xl border border-white/20 bg-gradient-to-br from-slate-900/60 to-slate-700/55 backdrop-blur-md transition-all duration-300 ${
+          areControlsVisible || !isPlaying
+            ? 'opacity-100 translate-y-0 pointer-events-auto'
+            : 'opacity-0 translate-y-3 pointer-events-none'
+        }`}
+      >
         <button
           type="button"
-          onClick={togglePlay}
+          onClick={async () => {
+            await togglePlay();
+            revealControls();
+          }}
           className="w-10 h-10 shrink-0 rounded-xl bg-blue-600 hover:bg-blue-500 text-white flex items-center justify-center transition-colors"
           aria-label={isPlaying ? 'Pausar video' : 'Reproducir video'}
         >
@@ -227,7 +324,10 @@ const CustomVideoPlayer = ({ src, title = 'Video', className = '' }) => {
           max="100"
           step="0.1"
           value={progressRatio}
-          onChange={handleSeek}
+          onChange={(event) => {
+            handleSeek(event);
+            revealControls();
+          }}
           style={buildRangeTrack(progressRatio, '#3b82f6', '#374151')}
           className="flex-1 min-w-0 h-1.5 rounded-full appearance-none cursor-pointer bg-gray-700 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-blue-500 [&::-webkit-slider-thumb]:cursor-pointer"
           aria-label="Progreso del video"
@@ -249,7 +349,10 @@ const CustomVideoPlayer = ({ src, title = 'Video', className = '' }) => {
             max="1"
             step="0.01"
             value={volume}
-            onChange={handleVolumeChange}
+            onChange={(event) => {
+              handleVolumeChange(event);
+              revealControls();
+            }}
             style={buildRangeTrack(volume * 100, '#3b82f6', '#374151')}
             className="w-[68px] h-1.5 rounded-full appearance-none cursor-pointer bg-gray-700 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-blue-500 [&::-webkit-slider-thumb]:cursor-pointer"
             aria-label="Volumen del video"
@@ -258,7 +361,10 @@ const CustomVideoPlayer = ({ src, title = 'Video', className = '' }) => {
 
         <button
           type="button"
-          onClick={toggleFullscreen}
+          onClick={async () => {
+            await toggleFullscreen();
+            revealControls();
+          }}
           className="w-10 h-10 shrink-0 rounded-xl bg-blue-600 hover:bg-blue-500 text-white flex items-center justify-center transition-colors"
           aria-label={isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
         >

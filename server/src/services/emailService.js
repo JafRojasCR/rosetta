@@ -112,14 +112,6 @@ const buildRosettaCodeHtml = ({ code, title, description, warning }) => `<!DOCTY
     <div class="wrapper">
         <table class="main" align="center">
             <tr>
-                <td class="header">
-                    <svg width="60" height="60" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="display: block; margin: 0 auto;">
-                        <rect width="24" height="24" rx="8" fill="#2563eb"/>
-                        <path d="M12 7V17M12 7L8 11M12 7L16 11" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                </td>
-            </tr>
-            <tr>
                 <td class="content">
                     <h1 class="title">${title}</h1>
                     <p class="description">${description}</p>
@@ -227,14 +219,6 @@ const buildRosettaResetLinkHtml = ({ resetUrl }) => `<!DOCTYPE html>
 <body>
   <div class="wrapper">
     <table class="main" align="center">
-      <tr>
-        <td class="header">
-          <svg width="60" height="60" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="display: block; margin: 0 auto;">
-            <rect width="24" height="24" rx="8" fill="#2563eb"/>
-            <path d="M12 7V17M12 7L8 11M12 7L16 11" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-        </td>
-      </tr>
       <tr>
         <td class="content">
           <h1 class="title">Restablece tu contraseña</h1>
