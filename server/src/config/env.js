@@ -67,6 +67,8 @@ module.exports = {
   emailClientId: process.env.EMAIL_CLIENT_ID || '',
   emailClientSecret: process.env.EMAIL_CLIENT_SECRET || '',
   emailRefreshToken: process.env.EMAIL_REFRESH_TOKEN || '',
+  resendApiKey: process.env.RESEND_API_KEY || '',
+  resendFrom: process.env.RESEND_FROM || process.env.EMAIL_FROM || process.env.EMAIL_USER || '',
   uploadDir,
   classUploadMaxFileSizeMb,
   documentUploadMaxFileSizeMb,

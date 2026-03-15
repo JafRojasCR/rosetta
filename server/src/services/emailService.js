@@ -1,4 +1,5 @@
 const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 const {
   nodeEnv,
   emailUser,
@@ -8,10 +9,13 @@ const {
   emailRefreshToken,
   emailFrom,
   emailEnabled,
+  resendApiKey,
+  resendFrom,
 } = require('../config/env');
 
 let cachedTransporter = null;
 let cachedFallbackTransporter = null;
+let cachedResendClient = null;
 
 const maskEmail = (email = '') => {
   const [name = '', domain = ''] = String(email).split('@');
@@ -257,6 +261,7 @@ const hasOAuthCredentials =
   Boolean(emailClientId) && Boolean(emailClientSecret) && Boolean(emailRefreshToken) && Boolean(emailUser);
 
 const hasPasswordCredentials = Boolean(emailUser) && Boolean(emailPass);
+const hasResendCredentials = Boolean(resendApiKey);
 
 const buildOAuthTransporter = () => {
   if (!hasOAuthCredentials) return null;
@@ -291,6 +296,14 @@ const buildPasswordTransporter = () => {
   return cachedFallbackTransporter;
 };
 
+const buildResendClient = () => {
+  if (!hasResendCredentials) return null;
+  if (cachedResendClient) return cachedResendClient;
+
+  cachedResendClient = new Resend(resendApiKey);
+  return cachedResendClient;
+};
+
 const sendMail = async ({ to, subject, html }) => {
   if (!emailEnabled) {
     console.log(`[EMAIL DISABLED] ${subject} => ${maskEmail(to)}`);
@@ -299,9 +312,10 @@ const sendMail = async ({ to, subject, html }) => {
 
   const oauthTransporter = buildOAuthTransporter();
   const passwordTransporter = buildPasswordTransporter();
+  const resendClient = buildResendClient();
 
-  if (!oauthTransporter && !passwordTransporter) {
-    throw new Error('Servicio de correo no configurado. Revisa variables EMAIL_* en .env');
+  if (!oauthTransporter && !passwordTransporter && !resendClient) {
+    throw new Error('Servicio de correo no configurado. Revisa variables EMAIL_* y RESEND_* en .env');
   }
 
   const resolveFromEmail = () => {
@@ -325,6 +339,26 @@ const sendMail = async ({ to, subject, html }) => {
     html,
   };
 
+  const sendViaResend = async () => {
+    if (!resendClient) {
+      throw new Error('Resend no configurado. Define RESEND_API_KEY en el entorno.');
+    }
+
+    const fromAddress = String(resendFrom || mailPayload.from || '').trim();
+    if (!fromAddress) {
+      throw new Error('RESEND_FROM no configurado. Usa formato "Rosetta <tu-dominio-verificado>".');
+    }
+
+    const toAddresses = Array.isArray(to) ? to : [to];
+    await resendClient.emails.send({
+      from: fromAddress,
+      to: toAddresses,
+      subject,
+      html,
+    });
+    return true;
+  };
+
   if (oauthTransporter) {
     try {
       await oauthTransporter.sendMail(mailPayload);
@@ -337,7 +371,7 @@ const sendMail = async ({ to, subject, html }) => {
         oauthMessage.includes('invalid_grant') ||
         oauthMessage.includes('535');
 
-      if (!passwordTransporter || !looksLikeAuthFailure) {
+      if (!passwordTransporter && !resendClient) {
         if (looksLikeAuthFailure) {
           throw new Error(
             'Autenticación de Gmail rechazada. Verifica que EMAIL_USER sea la misma cuenta autorizada, regenera EMAIL_REFRESH_TOKEN con scope https://mail.google.com/ y usa EMAIL_FROM con formato "Rosetta".'
@@ -346,14 +380,55 @@ const sendMail = async ({ to, subject, html }) => {
         throw oauthError;
       }
 
+      if (!looksLikeAuthFailure) {
+        console.warn('[EMAIL] OAuth2 falló por error no-auth, intentando provider fallback...');
+      }
+
+      if (looksLikeAuthFailure && !passwordTransporter && resendClient) {
+        console.warn('[EMAIL] OAuth2 falló, intentando fallback con Resend...');
+      } else if (looksLikeAuthFailure && passwordTransporter) {
+        console.warn('[EMAIL] OAuth2 falló, intentando fallback con App Password...');
+      }
+
       cachedTransporter = null;
-      console.warn('[EMAIL] OAuth2 falló, intentando fallback con App Password...');
     }
   }
 
-  await passwordTransporter.sendMail(mailPayload);
+  if (passwordTransporter) {
+    try {
+      await passwordTransporter.sendMail(mailPayload);
+      return true;
+    } catch (passwordError) {
+      const passwordMessage = String(passwordError?.message || '').toLowerCase();
+      const looksLikeAuthFailure =
+        passwordMessage.includes('invalid login') ||
+        passwordMessage.includes('badcredentials') ||
+        passwordMessage.includes('535');
 
-  return true;
+      if (!resendClient) {
+        if (looksLikeAuthFailure) {
+          throw new Error(
+            'Autenticación de Gmail rechazada. Verifica EMAIL_USER/EMAIL_PASS o OAuth, o configura RESEND_API_KEY como fallback.'
+          );
+        }
+        throw passwordError;
+      }
+
+      if (looksLikeAuthFailure) {
+        console.warn('[EMAIL] App Password falló, intentando fallback con Resend...');
+      } else {
+        console.warn('[EMAIL] App Password falló por error no-auth, intentando Resend...');
+      }
+
+      cachedFallbackTransporter = null;
+    }
+  }
+
+  if (resendClient) {
+    return sendViaResend();
+  }
+
+  throw new Error('No fue posible enviar correo con OAuth/App Password/Resend.');
 };
 
 const send2FACode = async (email, code) => {
