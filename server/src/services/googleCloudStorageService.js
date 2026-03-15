@@ -129,7 +129,6 @@ const getSignedUploadUrl = async ({ objectKey, mimeType }) => {
     version: 'v4',
     action: 'write',
     expires: expiresAt,
-    contentType: mimeType || 'application/octet-stream',
   });
 
   return {

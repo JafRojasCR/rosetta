@@ -82,18 +82,27 @@ const createVerificationRecord = async ({ account, role, purpose }) => {
   const verificationToken = crypto.randomBytes(32).toString('hex');
   const expiresAt = new Date(Date.now() + VERIFICATION_EXPIRY_MS);
 
-  await AuthVerificationToken.create({
-    tokenHash: hashValue(verificationToken),
-    codeHash: hashValue(code),
-    email: account.email,
-    userId: account._id,
-    role,
-    purpose,
-    expiresAt,
-  });
+  try {
+    await AuthVerificationToken.create({
+      tokenHash: hashValue(verificationToken),
+      codeHash: hashValue(code),
+      email: account.email,
+      userId: account._id,
+      role,
+      purpose,
+      expiresAt,
+    });
 
-  if (purpose === 'login_2fa') {
-    await send2FACode(account.email, code);
+    if (purpose === 'login_2fa') {
+      await send2FACode(account.email, code);
+    }
+  } catch (sendError) {
+    await revokeVerificationRecordsForUser({
+      email: account.email,
+      userId: account._id,
+      purpose,
+    });
+    throw sendError;
   }
 
   return {
@@ -238,6 +247,7 @@ const login = async (req, res) => {
       res,
       {
         requiresTwoFactor: true,
+        emailDeliveryConfirmed: true,
         verificationToken,
         email: user.email,
         role: resolvedRole,
@@ -271,13 +281,13 @@ const resend2FA = async (req, res) => {
     }
 
     const code = generateCode();
+    await send2FACode(record.email, code);
+
     record.codeHash = hashValue(code);
     record.attempts = 0;
     record.lockedUntil = null;
     record.expiresAt = new Date(Date.now() + VERIFICATION_EXPIRY_MS);
     await record.save();
-
-    await send2FACode(record.email, code);
 
     return success(res, null, 'Código enviado al correo.');
   } catch (err) {

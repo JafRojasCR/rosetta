@@ -359,79 +359,60 @@ const sendMail = async ({ to, subject, html }) => {
     return true;
   };
 
-  if (oauthTransporter) {
+  const sendViaOAuth = async () => {
+    if (!oauthTransporter) {
+      throw new Error('OAuth no configurado.');
+    }
+
+    await oauthTransporter.sendMail(mailPayload);
+    return true;
+  };
+
+  const sendViaPassword = async () => {
+    if (!passwordTransporter) {
+      throw new Error('App Password no configurado.');
+    }
+
+    await passwordTransporter.sendMail(mailPayload);
+    return true;
+  };
+
+  const providers = [];
+  if (resendClient) providers.push({ name: 'Resend', send: sendViaResend });
+  if (oauthTransporter) providers.push({ name: 'Gmail OAuth2', send: sendViaOAuth });
+  if (passwordTransporter) providers.push({ name: 'Gmail App Password', send: sendViaPassword });
+
+  let lastError = null;
+  for (const provider of providers) {
     try {
-      await oauthTransporter.sendMail(mailPayload);
+      await provider.send();
       return true;
-    } catch (oauthError) {
-      const oauthMessage = String(oauthError?.message || '').toLowerCase();
-      const looksLikeAuthFailure =
-        oauthMessage.includes('invalid login') ||
-        oauthMessage.includes('badcredentials') ||
-        oauthMessage.includes('invalid_grant') ||
-        oauthMessage.includes('535');
+    } catch (providerError) {
+      lastError = providerError;
+      console.warn(`[EMAIL] ${provider.name} falló, intentando siguiente fallback...`);
 
-      if (!passwordTransporter && !resendClient) {
-        if (looksLikeAuthFailure) {
-          throw new Error(
-            'Autenticación de Gmail rechazada. Verifica que EMAIL_USER sea la misma cuenta autorizada, regenera EMAIL_REFRESH_TOKEN con scope https://mail.google.com/ y usa EMAIL_FROM con formato "Rosetta".'
-          );
-        }
-        throw oauthError;
+      if (provider.name === 'Gmail OAuth2') {
+        cachedTransporter = null;
       }
 
-      if (!looksLikeAuthFailure) {
-        console.warn('[EMAIL] OAuth2 falló por error no-auth, intentando provider fallback...');
+      if (provider.name === 'Gmail App Password') {
+        cachedFallbackTransporter = null;
       }
-
-      if (looksLikeAuthFailure && !passwordTransporter && resendClient) {
-        console.warn('[EMAIL] OAuth2 falló, intentando fallback con Resend...');
-      } else if (looksLikeAuthFailure && passwordTransporter) {
-        console.warn('[EMAIL] OAuth2 falló, intentando fallback con App Password...');
-      }
-
-      cachedTransporter = null;
     }
   }
 
-  if (passwordTransporter) {
-    try {
-      await passwordTransporter.sendMail(mailPayload);
-      return true;
-    } catch (passwordError) {
-      const passwordMessage = String(passwordError?.message || '').toLowerCase();
-      const looksLikeAuthFailure =
-        passwordMessage.includes('invalid login') ||
-        passwordMessage.includes('badcredentials') ||
-        passwordMessage.includes('535');
-
-      if (!resendClient) {
-        if (looksLikeAuthFailure) {
-          throw new Error(
-            'Autenticación de Gmail rechazada. Verifica EMAIL_USER/EMAIL_PASS o OAuth, o configura RESEND_API_KEY como fallback.'
-          );
-        }
-        throw passwordError;
-      }
-
-      if (looksLikeAuthFailure) {
-        console.warn('[EMAIL] App Password falló, intentando fallback con Resend...');
-      } else {
-        console.warn('[EMAIL] App Password falló por error no-auth, intentando Resend...');
-      }
-
-      cachedFallbackTransporter = null;
-    }
+  if (lastError) {
+    throw lastError;
   }
 
-  if (resendClient) {
-    return sendViaResend();
-  }
-
-  throw new Error('No fue posible enviar correo con OAuth/App Password/Resend.');
+  throw new Error('No fue posible enviar correo con Resend/OAuth/App Password.');
 };
 
 const send2FACode = async (email, code) => {
+  if (!emailEnabled) {
+    throw new Error('No se puede enviar el código 2FA porque EMAIL_ENABLED está desactivado.');
+  }
+
   const html = buildRosettaCodeHtml({
     code,
     title: 'Verifica tu acceso',

@@ -165,6 +165,10 @@ export const AuthProvider = ({ children }) => {
     const data = response.data.data || {};
 
     if (data.requiresTwoFactor && data.verificationToken) {
+      if (data.emailDeliveryConfirmed !== true) {
+        throw new Error('No se pudo confirmar el envío del código 2FA. Intenta nuevamente.');
+      }
+
       const pendingPayload = {
         verificationToken: data.verificationToken,
         email: data.email,
