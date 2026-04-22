@@ -2,6 +2,8 @@
 
 Rosetta es una plataforma educativa full-stack que permite a los estudiantes acceder a clases, gestionar pagos y descargar documentos.
 
+Rosetta nace bajo la idea de mejorar la forma en que los estudiantes acceden a recursos académicos, sin necesidad de acceder a otras plataformas como YouTube, donde el acceso a estos vídeos es más abierto y hay una seguridad poca o nula en cuanto a quién tiene acceso a los vídeos. Rosetta ayuda a que los estudiantes centralicen su estudio en una plataforma simple de usar, exclusivamente dedicada al acceso a recursos de estudio a partir de clases, agendar estas mismas clases y acceder a clases mediante pagos revisados por medio de comprobantes.
+
 ## 🚀 Stack Tecnológico
 
 - **Frontend**: Vite + React + TailwindCSS + React Router + Axios
