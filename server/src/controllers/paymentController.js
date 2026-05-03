@@ -310,7 +310,7 @@ const createPayment = async (req, res) => {
 
     const billNumber = String(extractedData.billNumber || '').trim();
 
-    // Verificar comprobante no reutilizado
+    /* Verificar comprobante no reutilizado, temporalmente deshabilitado para evitar falsos positivos en la extracción de número de comprobante
     const isValid = await validatePayment(billNumber);
     if (!isValid) {
       await removeTempFile(req.file.path);
@@ -318,7 +318,7 @@ const createPayment = async (req, res) => {
         checks: validation.checks,
       });
     }
-
+*/
     const failedCoreCriteria = [
       validation.checks.amountMatches ? null : 'monto',
       validation.checks.recipientMatches ? null : 'destinatario',
