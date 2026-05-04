@@ -137,15 +137,22 @@ const CustomSelectMenu = ({
                         value === option.value ? 'bg-blue-50/50' : ''
                       }`}
                     >
-                      <div>
+                      <div className="flex-1">
                         <p className="text-sm font-semibold text-gray-900">{option.label}</p>
-                        {option.description ? (
-                          <p className="text-[11px] font-medium text-gray-400 mt-0.5 uppercase tracking-tight">
-                            {option.description}
-                          </p>
-                        ) : null}
+                        <div className="flex items-center gap-2 mt-0.5">
+                          {option.description ? (
+                            <p className="text-[11px] font-medium text-gray-400 uppercase tracking-tight">
+                              {option.description}
+                            </p>
+                          ) : null}
+                          {option.code ? (
+                            <span className="ml-auto inline-flex items-center bg-gray-100 text-gray-600 text-[10px] font-black px-2.5 py-1 rounded-full whitespace-nowrap">
+                              Código: {option.code}
+                            </span>
+                          ) : null}
+                        </div>
                       </div>
-                      {value === option.value ? <CheckCircle2 size={18} className="text-blue-500" /> : null}
+                      {value === option.value ? <CheckCircle2 size={18} className="text-blue-500 flex-shrink-0 ml-2" /> : null}
                     </button>
                   ))
                 )}

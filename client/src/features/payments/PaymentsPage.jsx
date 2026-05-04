@@ -93,6 +93,7 @@ const PaymentsPage = () => {
   const [error, setError] = useState('');
   const [lastChecks, setLastChecks] = useState(null);
   const [cancelingPaymentId, setCancelingPaymentId] = useState('');
+  const [classCodeSearch, setClassCodeSearch] = useState('');
   const fileInputRef = useRef(null);
 
   const userEmail = String(user?.email || '').toLowerCase();
@@ -146,14 +147,23 @@ const PaymentsPage = () => {
 
   const availableClassOptions = useMemo(
     () =>
-      availableClassesToPay.map((item) => ({
-        value: item.code,
-        label: `${item.name} • ${item.subject}`,
-        description: item.tutoredStudentName
-          ? `Tutoría para: ${item.tutoredStudentName}`
-          : `Código: ${item.code}`,
-      })),
-    [availableClassesToPay]
+      availableClassesToPay
+        .filter((item) =>
+          classCodeSearch.trim() === ''
+            ? true
+            : String(item.code || '')
+                .toLowerCase()
+                .includes(String(classCodeSearch || '').toLowerCase())
+        )
+        .map((item) => ({
+          value: item.code,
+          label: `${item.name} • ${item.subject}`,
+          description: item.tutoredStudentName
+            ? `Tutoría para: ${item.tutoredStudentName}`
+            : 'Clase grupal',
+          code: item.code,
+        })),
+    [availableClassesToPay, classCodeSearch]
   );
 
   const selectedClassData = useMemo(
@@ -427,21 +437,35 @@ const PaymentsPage = () => {
                   <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">
                     Clase a pagar
                   </label>
-                  <CustomSelectMenu
-                    value={selectedClassCode}
-                    onChange={(nextValue) => {
-                      setSelectedClassCode(nextValue);
-                      setError('');
-                    }}
-                    options={availableClassOptions}
-                    placeholder={
-                      availableClassesToPay.length === 0
-                        ? 'No hay clases disponibles para pagar'
-                        : 'Seleccionar clase'
-                    }
-                    disabled={availableClassesToPay.length === 0}
-                    buttonClassName="px-6 py-4"
-                  />
+                  
+                  <div className="space-y-3">
+                    <input
+                      type="text"
+                      value={classCodeSearch}
+                      onChange={(e) => setClassCodeSearch(e.target.value)}
+                      placeholder="Buscar por código (ej: mat030501)"
+                      className="w-full px-6 py-3 border-2 border-gray-200 rounded-2xl text-sm font-medium placeholder-gray-400 transition-all focus:outline-none focus:border-blue-500 focus:bg-white focus:shadow-md"
+                    />
+                    
+                    <CustomSelectMenu
+                      value={selectedClassCode}
+                      onChange={(nextValue) => {
+                        setSelectedClassCode(nextValue);
+                        setClassCodeSearch('');
+                        setError('');
+                      }}
+                      options={availableClassOptions}
+                      placeholder={
+                        availableClassesToPay.length === 0
+                          ? 'No hay clases disponibles para pagar'
+                          : availableClassOptions.length === 0 && classCodeSearch.trim() !== ''
+                          ? 'No se encontraron clases con ese código'
+                          : 'Seleccionar clase'
+                      }
+                      disabled={availableClassesToPay.length === 0}
+                      buttonClassName="px-6 py-4"
+                    />
+                  </div>
 
                   {rejectedClassCodes.size > 0 ? (
                     <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-xs sm:text-sm font-semibold text-red-700 flex items-start gap-2">
