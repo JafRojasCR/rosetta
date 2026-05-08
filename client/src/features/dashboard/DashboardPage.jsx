@@ -81,7 +81,7 @@ const adminCards = [
   },
   {
     id: 'configuracion-admin',
-    title: 'Configuracion',
+    title: 'Configuración',
     subtitle: 'Ajustes generales del sistema',
     route: '/configuracion',
     image: '/dash6.jpg',

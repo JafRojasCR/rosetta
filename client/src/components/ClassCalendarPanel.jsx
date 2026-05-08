@@ -1339,7 +1339,7 @@ const ClassCalendarPanel = ({
               <div className="mb-6 flex items-center justify-between gap-3">
                 <div>
                   <h3 className="text-xl font-extrabold text-slate-900 tracking-tight">Linea Horaria del Dia</h3>
-                  <p className="text-xs text-slate-500 font-semibold">Arrastra para crear o solicitar bloques de 30 min</p>
+                  <p className="text-xs text-slate-500 font-semibold">Arrastra para crear o solicitar bloques de 30 minutos hasta 3 horas por día</p>
                 </div>
               </div>
 

@@ -224,11 +224,6 @@ const PaymentsPage = () => {
   }, [location.search, availableClassesToPay]);
 
   const openFileBrowser = () => {
-    if (!selectedClassCode) {
-      setError('Primero selecciona la clase que vas a pagar.');
-      return;
-    }
-
     if (!tutorialAccepted) {
       setShowTutorial(true);
       return;
