@@ -463,6 +463,17 @@ const extractAmount = (text = '', expectedAmount = null) => {
         const parsed = parseAmountCandidate(variant);
         if (isInvalidAmountToken({ rawToken: variant, parsedAmount: parsed, line })) continue;
         if (!isLikelyPlatformAmount(parsed)) continue;
+
+        // If we have an expected amount, accept immediately any candidate
+        // that exactly matches or is very close to the expected value.
+        if (expected !== null && Number.isFinite(parsed)) {
+          const diff = Math.abs(parsed - expected);
+          const tolerance = Math.max(5, Math.round(expected * 0.02)); // 2% or at least 5 colones
+          if (diff === 0 || diff <= tolerance) {
+            // immediate accept: high confidence because it matches expected
+            return parsed;
+          }
+        }
         let score = 0;
         // Boost if original token or line contains currency indicators
         const hasCurrencySymbol = /^[^\d]*[₡$¢C]/i.test(token) || /(COLON|CRC|₡|¢|CRC)/i.test(line);

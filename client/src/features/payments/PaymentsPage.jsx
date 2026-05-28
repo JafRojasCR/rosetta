@@ -319,6 +319,12 @@ const PaymentsPage = () => {
     setError('');
     setSuccess('');
     setWarning('');
+    // If the payment being cancelled was pending, clear lastChecks/report shown after upload
+    const existing = (payments || []).find((p) => p.paymentId === paymentId) || null;
+    if (existing && existing.status === 'pendiente') {
+      setLastChecks(null);
+      setWarning('');
+    }
 
     try {
       await api.delete(`/payments/${paymentId}`);
@@ -326,6 +332,14 @@ const PaymentsPage = () => {
       setSuccess('Pago eliminado del historial. Ya puedes subir un nuevo comprobante.');
       if (expandedPaymentId === paymentId) {
         setExpandedPaymentId('');
+      }
+      // Also clear preview/upload state if the cancelled payment corresponded to the last upload
+      if (existing && existing.status === 'pendiente') {
+        setUploadedFile(null);
+        if (previewUrl) {
+          URL.revokeObjectURL(previewUrl);
+        }
+        setPreviewUrl('');
       }
     } catch (requestError) {
       setError(requestError.response?.data?.message || 'No se pudo cancelar la solicitud pendiente.');
@@ -391,14 +405,12 @@ const PaymentsPage = () => {
                         <img
                           src={previewUrl}
                           alt="Comprobante"
-                          className="absolute inset-0 w-full h-full object-cover opacity-20"
+                          className="absolute inset-0 w-full h-full object-cover opacity-30"
                         />
                       ) : null}
                       <CheckCircle2 size={48} className="text-emerald-500 mb-4" />
                       <span className="text-emerald-700 font-black text-lg">¡Listo!</span>
-                      <span className="text-emerald-600/60 text-sm font-medium break-all px-2">
-                        {uploadedFile.name}
-                      </span>
+                      {/* Filename is intentionally hidden in the UI */}
                       <span className="text-emerald-600/60 text-sm font-medium">Click para cambiar</span>
                     </>
                   ) : (
