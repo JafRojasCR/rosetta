@@ -1555,7 +1555,7 @@ const ClassCalendarPanel = ({
                           onMouseLeave={() => { if (!cancelInputFocused && !cancelReason) setShowCancelInput(false); }}
                         >
                           <div
-                            className="absolute left-1/2 -translate-x-1/2 -top-20 w-[280px] z-30 pointer-events-auto"
+                            className="absolute left-1/2 -translate-x-1/2 -top-20 w-[240px] z-30 pointer-events-auto"
                             style={{
                               transition: 'all 220ms cubic-bezier(0.2,0.9,0.2,1)',
                               transform: showCancelInput || cancelReason || cancelInputFocused ? 'translateX(-50%) translateY(0) scale(1)' : 'translateX(-50%) translateY(-6px) scale(0.96)',
@@ -1563,7 +1563,7 @@ const ClassCalendarPanel = ({
                             }}
                           >
                             <div className="bg-white border border-red-100 shadow-sm rounded-2xl p-3">
-                              <label className="text-[11px] font-black uppercase tracking-widest text-red-500 mb-1 block">Razón de cancelación</label>
+                              <label className="text-[11px] font-black uppercase tracking-widest text-red-500 mb-1 block">Razón</label>
                               <input
                                 ref={cancelInputRef}
                                 type="text"
