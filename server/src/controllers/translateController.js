@@ -3,7 +3,6 @@ const https = require('https');
 // Predefined high-fidelity Spanish-to-English dictionary for instant Rosetta UI translations
 const PREDEFINED_DICTIONARY = {
   // Main headers & labels
-  "Proyecto Rosetta": "Rosetta Project",
   "Clases": "Classes",
   "Pagos": "Payments",
   "Recursos": "Resources",

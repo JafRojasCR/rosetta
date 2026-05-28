@@ -135,7 +135,7 @@ const DashboardPage = () => {
 
       <nav className="bg-white px-4 sm:px-8 py-4 flex items-center justify-between gap-3 shadow-sm z-20 sticky top-0">
         <h1 className="text-lg sm:text-2xl font-bold text-gray-800 tracking-tight text-left">
-          Proyecto Rosetta
+          Rosetta
         </h1>
 
         <div className="flex items-center justify-end gap-2 sm:gap-3 ml-auto">
