@@ -215,6 +215,28 @@ const buildAmountTokenVariants = (rawToken = '') => {
     variants.add(`${repeatedLeadingDigitWithoutSeparator[1]}${repeatedLeadingDigitWithoutSeparator[2]}`);
   }
 
+  // Strip common leading non-digit currency markers (e.g., 'C', 'c', '₡', 'CRC', '$')
+  const strippedLeading = token.replace(/^[^\d]+/, '');
+  if (strippedLeading && strippedLeading !== token) variants.add(strippedLeading);
+
+  // Replace common OCR confusions inside the token
+  const ocrNormalized = token
+    .replace(/O/g, '0')
+    .replace(/o/g, '0')
+    .replace(/I/g, '1')
+    .replace(/l/g, '1')
+    .replace(/\s+/g, '');
+  if (ocrNormalized && ocrNormalized !== token) variants.add(ocrNormalized);
+
+  // Generate single-digit deletion variants to handle spurious inserted digits (e.g., '27000' -> '7000')
+  const digitsOnly = token.replace(/[^0-9]/g, '');
+  if (digitsOnly.length >= 2 && digitsOnly.length <= 8) {
+    for (let i = 0; i < digitsOnly.length; i += 1) {
+      const withoutOne = digitsOnly.slice(0, i) + digitsOnly.slice(i + 1);
+      if (withoutOne) variants.add(withoutOne);
+    }
+  }
+
   return Array.from(variants).filter(Boolean);
 };
 
@@ -441,8 +463,10 @@ const extractAmount = (text = '', expectedAmount = null) => {
         const parsed = parseAmountCandidate(variant);
         if (isInvalidAmountToken({ rawToken: variant, parsedAmount: parsed, line })) continue;
         if (!isLikelyPlatformAmount(parsed)) continue;
-
         let score = 0;
+        // Boost if original token or line contains currency indicators
+        const hasCurrencySymbol = /^[^\d]*[₡$¢C]/i.test(token) || /(COLON|CRC|₡|¢|CRC)/i.test(line);
+        if (hasCurrencySymbol) score += 6;
         if (amountKeywords.test(line)) score += 8;
         if (currencyKeywords.test(line)) score += 5;
         if (/MONTO\s*(DEBITADO|ACREDITADO|TRANSFERENCIA)?/i.test(line)) score += 4;
@@ -473,8 +497,17 @@ const extractAmount = (text = '', expectedAmount = null) => {
   }
 
   const sortedCandidates = scoredCandidates.sort((left, right) => right.score - left.score);
-  const bestCandidate = sortedCandidates.find((candidate) => candidate.score > 0);
-  if (bestCandidate) return bestCandidate.parsed;
+  const bestCandidate = sortedCandidates[0];
+  if (bestCandidate && bestCandidate.score > 0) return bestCandidate.parsed;
+  // If no strongly positive candidate, accept the top candidate if reasonable
+  if (bestCandidate && Number.isFinite(bestCandidate.parsed)) {
+    const top = bestCandidate.parsed;
+    if (expected !== null && expected > 0) {
+      const diff = Math.abs(top - expected);
+      if (diff <= Math.max(10, Math.round(expected * 0.05))) return top;
+    }
+    if (top >= 500 && top <= 1000000) return top;
+  }
 
   const fallbackLines = lines.filter((line) => !isDateLikeLine(line));
   for (const line of fallbackLines) {
