@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { Book, BookOpen, CreditCard, FileText, LogOut, Settings, User, Users } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import useAuth from '../../hooks/useAuth';
+import ThemeLanguageToggles from '../../components/ThemeLanguageToggles';
+
 
 const userCards = [
   {
@@ -137,7 +139,9 @@ const DashboardPage = () => {
         </h1>
 
         <div className="flex items-center justify-end gap-2 sm:gap-3 ml-auto">
+          <ThemeLanguageToggles />
           {!isAdmin ? (
+
             <button
               className="bg-blue-50 text-blue-600 hover:bg-blue-100 w-11 h-11 sm:w-auto sm:h-auto sm:px-5 py-0 sm:py-2.5 rounded-full sm:rounded-xl font-semibold transition-colors duration-200 flex items-center justify-center gap-2 text-sm sm:text-base"
               onClick={() => navigate('/perfil')}

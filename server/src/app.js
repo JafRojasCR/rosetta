@@ -27,7 +27,7 @@ app.use(express.urlencoded({ extended: true }));
 // Rate limiting global
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 200,
+  max: 10000, // Increased from 200 to prevent running out of queries during development and debugging
   standardHeaders: true,
   legacyHeaders: false,
   skip: (req) => {
@@ -44,7 +44,7 @@ const limiter = rateLimit({
 // Dedicated limiter for chunked uploads (high threshold to avoid blocking large files)
 const uploadLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 2000,
+  max: 20000, // Increased from 2000 to prevent blocking large uploads or debug traces
   standardHeaders: true,
   legacyHeaders: false,
   message: {
