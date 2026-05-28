@@ -237,6 +237,16 @@ const buildAmountTokenVariants = (rawToken = '') => {
     }
   }
 
+  // Try removing first/last 1-2 digits to recover from common OCR insertion errors
+  if (digitsOnly.length >= 3 && digitsOnly.length <= 12) {
+    // remove first 1 and 2
+    variants.add(digitsOnly.slice(1));
+    variants.add(digitsOnly.slice(2));
+    // remove last 1 and 2
+    variants.add(digitsOnly.slice(0, -1));
+    variants.add(digitsOnly.slice(0, -2));
+  }
+
   return Array.from(variants).filter(Boolean);
 };
 
@@ -438,7 +448,7 @@ const extractDetail = (text = '') => {
   return null;
 };
 
-const extractAmount = (text = '', expectedAmount = null) => {
+const extractAmountDetailed = (text = '', expectedAmount = null) => {
   const lines = String(text)
     .split(/\n+/)
     .map((line) => cleanupSpaces(line))
@@ -449,9 +459,10 @@ const extractAmount = (text = '', expectedAmount = null) => {
 
   const scoredCandidates = [];
   const expected = Number.isFinite(Number(expectedAmount)) ? Number(expectedAmount) : null;
+  let matchedVariant = null;
 
   for (const line of lines) {
-    if (isLikelyMetadataLine(line) && !/(MONTO|TOTAL|IMPORTE|PAGADO|TRANSFERIDO|ENVIADO|DEBITADO|ACREDITADO|TRANSFERENCIA)/i.test(line)) {
+    if (isLikelyMetadataLine(line) && !amountKeywords.test(line)) {
       continue;
     }
 
@@ -470,10 +481,17 @@ const extractAmount = (text = '', expectedAmount = null) => {
           const diff = Math.abs(parsed - expected);
           const tolerance = Math.max(5, Math.round(expected * 0.02)); // 2% or at least 5 colones
           if (diff === 0 || diff <= tolerance) {
+            matchedVariant = variant;
             // immediate accept: high confidence because it matches expected
-            return parsed;
+            return {
+              amount: parsed,
+              matchedExpected: true,
+              matchedVariant: variant,
+              candidates: scoredCandidates,
+            };
           }
         }
+
         let score = 0;
         // Boost if original token or line contains currency indicators
         const hasCurrencySymbol = /^[^\d]*[₡$¢C]/i.test(token) || /(COLON|CRC|₡|¢|CRC)/i.test(line);
@@ -509,20 +527,25 @@ const extractAmount = (text = '', expectedAmount = null) => {
 
   const sortedCandidates = scoredCandidates.sort((left, right) => right.score - left.score);
   const bestCandidate = sortedCandidates[0];
-  if (bestCandidate && bestCandidate.score > 0) return bestCandidate.parsed;
+  if (bestCandidate && bestCandidate.score > 0) {
+    return { amount: bestCandidate.parsed, matchedExpected: false, matchedVariant: bestCandidate.variant, candidates: sortedCandidates };
+  }
+
   // If no strongly positive candidate, accept the top candidate if reasonable
   if (bestCandidate && Number.isFinite(bestCandidate.parsed)) {
     const top = bestCandidate.parsed;
     if (expected !== null && expected > 0) {
       const diff = Math.abs(top - expected);
-      if (diff <= Math.max(10, Math.round(expected * 0.05))) return top;
+      if (diff <= Math.max(10, Math.round(expected * 0.05)))
+        return { amount: top, matchedExpected: false, matchedVariant: bestCandidate.variant, candidates: sortedCandidates };
     }
-    if (top >= 500 && top <= 1000000) return top;
+    if (top >= 500 && top <= 1000000)
+      return { amount: top, matchedExpected: false, matchedVariant: bestCandidate.variant, candidates: sortedCandidates };
   }
 
   const fallbackLines = lines.filter((line) => !isDateLikeLine(line));
   for (const line of fallbackLines) {
-    if (isLikelyMetadataLine(line) && !/(MONTO|TOTAL|IMPORTE|PAGADO|TRANSFERIDO|ENVIADO|DEBITADO|ACREDITADO|TRANSFERENCIA)/i.test(line)) {
+    if (isLikelyMetadataLine(line) && !amountKeywords.test(line)) {
       continue;
     }
 
@@ -535,14 +558,20 @@ const extractAmount = (text = '', expectedAmount = null) => {
         if (!isLikelyPlatformAmount(parsed)) continue;
         if (expected !== null) {
           const diff = Math.abs(parsed - expected);
-          if (diff <= Math.max(5, Math.round(expected * 0.02))) return parsed;
+          if (diff <= Math.max(5, Math.round(expected * 0.02)))
+            return { amount: parsed, matchedExpected: true, matchedVariant: variant, candidates: scoredCandidates };
         }
-        if (parsed >= 500) return parsed;
+        if (parsed >= 500) return { amount: parsed, matchedExpected: false, matchedVariant: variant, candidates: scoredCandidates };
       }
     }
   }
 
-  return null;
+  return { amount: null, matchedExpected: false, matchedVariant: null, candidates: scoredCandidates };
+};
+
+const extractAmount = (text = '', expectedAmount = null) => {
+  const info = extractAmountDetailed(text, expectedAmount);
+  return Number.isFinite(info?.amount) ? Math.round(info.amount) : null;
 };
 
 const extractRecipient = (text = '') => {
@@ -676,7 +705,7 @@ const extractRawTextFromBuffer = async ({ buffer, mimeType = '', fileName = '', 
   }
 };
 
-const buildExtractedPaymentFields = ({ text = '', contextLabel = '' }) => {
+const buildExtractedPaymentFields = ({ text = '', contextLabel = '', expectedAmount = null }) => {
   const normalizedText = normalizeText(text);
 
   const safelyExtract = (label, extractor) => {
@@ -696,7 +725,8 @@ const buildExtractedPaymentFields = ({ text = '', contextLabel = '' }) => {
 
   const billNumber = safelyExtract('billNumber', () => extractBillNumber(text));
   const paymentDate = safelyExtract('date', () => parseDateFromText(text));
-  const amount = safelyExtract('amount', () => extractAmount(text));
+  const amountInfo = safelyExtract('amount', () => extractAmountDetailed(text, expectedAmount));
+  const amount = amountInfo && amountInfo.amount ? amountInfo.amount : null;
   const classCode = safelyExtract('classCode', () => extractClassCode(text));
   const detail = safelyExtract('detail', () => extractDetail(text));
   const recipient = safelyExtract('recipient', () => extractRecipient(text));
@@ -707,15 +737,18 @@ const buildExtractedPaymentFields = ({ text = '', contextLabel = '' }) => {
     billNumber,
     date: paymentDate,
     amount,
+    amountCandidates: amountInfo?.candidates || [],
+    amountMatchedVariant: amountInfo?.matchedVariant || null,
+    amountMatchedExpected: Boolean(amountInfo?.matchedExpected),
     classCode,
     detail,
     recipient,
   };
 };
 
-const extractPaymentData = async (filePath) => {
+const extractPaymentData = async (filePath, expectedAmount = null) => {
   const text = await extractRawText(filePath);
-  const extracted = buildExtractedPaymentFields({ text, contextLabel: 'filePath' });
+  const extracted = buildExtractedPaymentFields({ text, contextLabel: 'filePath', expectedAmount });
 
   logOcr('EXTRACTION_SUMMARY', {
     filePath,
@@ -736,9 +769,9 @@ const extractPaymentData = async (filePath) => {
   return extracted;
 };
 
-const extractPaymentDataFromBuffer = async ({ buffer, mimeType = '', fileName = '', source = 'buffer' }) => {
+const extractPaymentDataFromBuffer = async ({ buffer, mimeType = '', fileName = '', source = 'buffer', expectedAmount = null }) => {
   const text = await extractRawTextFromBuffer({ buffer, mimeType, fileName, source });
-  const extracted = buildExtractedPaymentFields({ text, contextLabel: source });
+  const extracted = buildExtractedPaymentFields({ text, contextLabel: source, expectedAmount });
 
   logOcr('EXTRACTION_SUMMARY_BUFFER', {
     source,

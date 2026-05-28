@@ -266,7 +266,7 @@ const createPayment = async (req, res) => {
 
     let extractedData;
     try {
-      extractedData = await extractPaymentData(req.file.path);
+      extractedData = await extractPaymentData(req.file.path, cls.price);
       if (!String(extractedData?.rawText || '').trim()) {
         throw new Error('OCR local sin texto extraído.');
       }
@@ -278,6 +278,7 @@ const createPayment = async (req, res) => {
           mimeType: req.file.mimetype,
           fileName: req.file.originalname || req.file.filename,
           source: `local:${req.file.filename || ''}`,
+          expectedAmount: cls.price,
         });
       } catch (fallbackError) {
         await removeTempFile(req.file.path);
