@@ -16,7 +16,6 @@ const ThemeLanguageToggles = () => {
         }`}
         type="button"
         aria-label="Translate to English"
-        title={isEnglish ? "Cambiar a Español" : "Translate to English"}
       >
         <Languages size={18} />
       </button>
@@ -31,7 +30,6 @@ const ThemeLanguageToggles = () => {
         }`}
         type="button"
         aria-label="Toggle Dark Mode"
-        title={darkMode ? "Modo Claro" : "Modo Oscuro"}
       >
         {darkMode ? <Sun size={18} /> : <Moon size={18} />}
       </button>
