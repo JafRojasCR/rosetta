@@ -311,8 +311,13 @@ export const AuthProvider = ({ children }) => {
     return response.data?.data || null;
   }, []);
 
-  const deleteCalendarSlot = useCallback(async (slotId) => {
-    const response = await api.delete(`/classes/calendar/slots/${slotId}`);
+  const deleteCalendarSlot = useCallback(async (slotId, options = {}) => {
+    // options: { reason }
+    const config = {};
+    if (options && typeof options.reason === 'string') {
+      config.data = { reason: String(options.reason || '').trim() };
+    }
+    const response = await api.delete(`/classes/calendar/slots/${slotId}`, config);
     return response.data?.data || null;
   }, []);
 

@@ -546,6 +546,7 @@ const sendClassScheduleRejectedEmail = async ({
   startMinute,
   endMinute,
   previousStatus,
+  reason,
 }) => {
   const wasBooked = String(previousStatus || '').toLowerCase() === 'booked';
   const title = wasBooked ? 'Tu clase fue cancelada' : 'Tu solicitud de clase fue rechazada';
@@ -553,18 +554,24 @@ const sendClassScheduleRejectedEmail = async ({
     ? `Hola ${studentName || 'estudiante'}, tu clase reservada fue cancelada.`
     : `Hola ${studentName || 'estudiante'}, tu solicitud de clase no fue aprobada.`;
 
+  const rows = [
+    { label: 'Fecha', value: dateKey || '--' },
+    {
+      label: 'Horario',
+      value: `${formatHourMinute(startMinute)} - ${formatHourMinute(endMinute)}`,
+    },
+    { label: 'Estado', value: wasBooked ? 'cancelado' : 'rechazado' },
+  ];
+
+  if (reason && String(reason).trim()) {
+    rows.push({ label: 'Razón', value: String(reason).trim() });
+  }
+
   const html = buildCalendarEmailShell({
     title,
     subtitle,
     accent: '#ef4444',
-    rows: [
-      { label: 'Fecha', value: dateKey || '--' },
-      {
-        label: 'Horario',
-        value: `${formatHourMinute(startMinute)} - ${formatHourMinute(endMinute)}`,
-      },
-      { label: 'Estado', value: wasBooked ? 'cancelado' : 'rechazado' },
-    ],
+    rows,
   });
 
   return sendMail({

@@ -436,6 +436,8 @@ const deleteSlot = async (req, res) => {
     const slotToDelete = await ClassCalendarSlot.findById(slotId).lean();
     if (!slotToDelete) return error(res, 'Bloque no encontrado.', 404);
 
+    const reason = String(req.body?.reason || '').trim();
+
     const isStudentOwned = Boolean(slotToDelete?.student?.email);
     const wasPendingOrBooked = slotToDelete?.status === 'pending' || slotToDelete?.status === 'booked';
     if (isStudentOwned && wasPendingOrBooked) {
@@ -449,6 +451,7 @@ const deleteSlot = async (req, res) => {
           startMinute: slotToDelete.startMinute,
           endMinute: slotToDelete.endMinute,
           previousStatus: slotToDelete.status,
+          reason,
         });
       } catch (mailError) {
         return error(

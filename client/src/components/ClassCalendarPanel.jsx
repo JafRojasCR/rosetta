@@ -198,6 +198,10 @@ const ClassCalendarPanel = ({
   const [loading, setLoading] = useState(true);
   const [isMonthTransitioning, setIsMonthTransitioning] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+  const [showCancelInput, setShowCancelInput] = useState(false);
+  const [cancelInputFocused, setCancelInputFocused] = useState(false);
+  const cancelInputRef = useRef(null);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [isDragging, setIsDragging] = useState(false);
@@ -466,6 +470,8 @@ const ClassCalendarPanel = ({
       setActivePopover(null);
       setIsClosingPopover(false);
       popoverCloseTimerRef.current = null;
+      setCancelReason('');
+      setShowCancelInput(false);
     }, 170);
   }, [activePopover]);
 
@@ -568,6 +574,11 @@ const ClassCalendarPanel = ({
 
       if (nextPopover?.type === 'new-available') {
         setAdminAvailabilityDetail(String(nextPopover.detail || ''));
+      }
+
+      if (nextPopover?.type === 'existing') {
+        setCancelReason('');
+        setShowCancelInput(false);
       }
     },
     []
@@ -1053,7 +1064,7 @@ const ClassCalendarPanel = ({
     }
   };
 
-  const handleDelete = async (slotId) => {
+  const handleDelete = async (slotId, reason = null) => {
     setSaving(true);
     setError('');
     setMessage('');
@@ -1064,7 +1075,11 @@ const ClassCalendarPanel = ({
         : slots.find((slot) => slot.id === slotId) || null;
 
     try {
-      await deleteSlot(slotId);
+      if (reason && typeof deleteSlot === 'function') {
+        await deleteSlot(slotId, { reason });
+      } else {
+        await deleteSlot(slotId);
+      }
       setSlots((prev) => prev.filter((slot) => slot.id !== slotId));
       triggerAvailableReturnAnimation(slotToDelete);
       setMessage('Bloque eliminado correctamente.');
@@ -1510,17 +1525,71 @@ const ClassCalendarPanel = ({
                       </button>
                     )}
 
-                    <button
-                      type="button"
-                      disabled={saving}
-                      onClick={() => handleDelete(activePopover.slot.id)}
-                      className={`${
-                        activePopover.slot.status === 'pending' ? 'col-span-1' : 'col-span-2'
-                      } bg-red-50 text-red-600 py-3 rounded-2xl flex items-center justify-center gap-2 hover:bg-red-600 hover:text-white transition-colors disabled:opacity-60`}
-                    >
-                      <Trash2 size={16} />
-                      Eliminar
-                    </button>
+                    {(() => {
+                      const studentOwned = Boolean(activePopover.slot.student?.email);
+                      const isPendingOrBooked = activePopover.slot.status === 'pending' || activePopover.slot.status === 'booked';
+                      const requiresReason = studentOwned && isPendingOrBooked;
+
+                      if (!requiresReason) {
+                        // Default immediate delete for available/group or non-student slots
+                        return (
+                          <button
+                            type="button"
+                            disabled={saving}
+                            onClick={() => handleDelete(activePopover.slot.id)}
+                            className={`${
+                              activePopover.slot.status === 'pending' ? 'col-span-1' : 'col-span-2'
+                            } bg-red-50 text-red-600 py-3 rounded-2xl flex items-center justify-center gap-2 hover:bg-red-600 hover:text-white transition-colors disabled:opacity-60`}
+                          >
+                            <Trash2 size={16} />
+                            Eliminar
+                          </button>
+                        );
+                      }
+
+                      // Special behavior: show floating input only on hover over wrapper
+                      return (
+                        <div
+                          className={`relative ${activePopover.slot.status === 'pending' ? 'col-span-1' : 'col-span-2'}`}
+                          onMouseEnter={() => setShowCancelInput(true)}
+                          onMouseLeave={() => { if (!cancelInputFocused && !cancelReason) setShowCancelInput(false); }}
+                        >
+                          <div
+                            className="absolute left-1/2 -translate-x-1/2 -top-20 w-[280px] z-30 pointer-events-auto"
+                            style={{
+                              transition: 'all 220ms cubic-bezier(0.2,0.9,0.2,1)',
+                              transform: showCancelInput || cancelReason || cancelInputFocused ? 'translateX(-50%) translateY(0) scale(1)' : 'translateX(-50%) translateY(-6px) scale(0.96)',
+                              opacity: showCancelInput || cancelReason || cancelInputFocused ? 1 : 0,
+                            }}
+                          >
+                            <div className="bg-white border border-red-100 shadow-sm rounded-2xl p-3">
+                              <label className="text-[11px] font-black uppercase tracking-widest text-red-500 mb-1 block">Razón de cancelación</label>
+                              <input
+                                ref={cancelInputRef}
+                                type="text"
+                                value={cancelReason}
+                                onChange={(e) => setCancelReason(e.target.value)}
+                                onFocus={() => { setCancelInputFocused(true); setShowCancelInput(true); }}
+                                onBlur={() => { setCancelInputFocused(false); /* keep visible if there's text */ if (!cancelReason) setShowCancelInput(false); }}
+                                placeholder="Motivo breve..."
+                                maxLength={240}
+                                className="w-full rounded-xl border border-red-200 px-3 py-2 text-sm text-slate-700 outline-none focus:border-red-400"
+                              />
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            disabled={saving || !(String(cancelReason || '').trim())}
+                            onClick={() => handleDelete(activePopover.slot.id, String(cancelReason || '').trim())}
+                            className="w-full bg-red-50 text-red-600 py-3 rounded-2xl flex items-center justify-center gap-2 hover:bg-red-600 hover:text-white transition-colors disabled:opacity-60"
+                          >
+                            <Trash2 size={16} />
+                            Eliminar
+                          </button>
+                        </div>
+                      );
+                    })()}
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 gap-3">
