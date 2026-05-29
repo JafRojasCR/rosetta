@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import api from '../../services/api';
 import LoadingSpinner from '../../components/LoadingSpinner';
+import FloatingStatsButton from '../../components/FloatingStatsButton';
 
 const CHECK_LABELS = {
   hasBillNumber: 'Comprobante/documento detectado',
@@ -99,47 +100,33 @@ const AdminPaymentsPage = () => {
   }, []);
 
   useEffect(() => {
-    const paymentsNeedingAccess = (payments || []).filter(
-      (payment) =>
-        payment?.paymentId &&
-        payment?.billUrl &&
-        !billAccessByPaymentId[payment.paymentId]
-    );
+    const activeId = expandedPendingId || expandedRegisteredId;
+    if (!activeId || billAccessByPaymentId[activeId]) return;
 
-    if (paymentsNeedingAccess.length === 0) return;
+    const payment = (payments || []).find((p) => p.paymentId === activeId);
+    if (!payment || !payment.billUrl) return;
 
     let isCancelled = false;
 
-    const fetchAccessUrls = async () => {
-      const responses = await Promise.allSettled(
-        paymentsNeedingAccess.map((payment) =>
-          api.get(`/payments/${payment.paymentId}/bill-access-url`)
-        )
-      );
-
-      if (isCancelled) return;
-
-      const next = {};
-      responses.forEach((result, index) => {
-        if (result.status !== 'fulfilled') return;
-        const payment = paymentsNeedingAccess[index];
-        const accessUrl = result.value?.data?.data?.accessUrl || '';
-        if (payment?.paymentId && accessUrl) {
-          next[payment.paymentId] = accessUrl;
+    const fetchAccessUrl = async () => {
+      try {
+        const response = await api.get(`/payments/${activeId}/bill-access-url`);
+        if (isCancelled) return;
+        const accessUrl = response.data?.data?.accessUrl || '';
+        if (activeId && accessUrl) {
+          setBillAccessByPaymentId((prev) => ({ ...prev, [activeId]: accessUrl }));
         }
-      });
-
-      if (Object.keys(next).length > 0) {
-        setBillAccessByPaymentId((prev) => ({ ...prev, ...next }));
+      } catch (_err) {
+        // ignore fetch failures
       }
     };
 
-    fetchAccessUrls();
+    fetchAccessUrl();
 
     return () => {
       isCancelled = true;
     };
-  }, [payments, billAccessByPaymentId]);
+  }, [expandedPendingId, expandedRegisteredId, payments, billAccessByPaymentId]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -796,6 +783,8 @@ const AdminPaymentsPage = () => {
       <footer className="py-4 sm:py-6 text-center text-gray-400 text-xs sm:text-sm border-t border-gray-100 bg-white/60 mt-auto">
         © 2026 Rosetta - Plataforma de Aula Virtual
       </footer>
+
+      <FloatingStatsButton onClick={() => navigate('/admin/pagos/estadisticas')} />
     </div>
   );
 };

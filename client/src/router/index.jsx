@@ -19,6 +19,7 @@ import AdminDocumentsPage from '../features/documents/AdminDocumentsPage';
 import AdminClassesPage from '../features/admin/AdminClassesPage';
 import AdminCalendarPage from '../features/admin/AdminCalendarPage';
 import AdminPaymentsPage from '../features/admin/AdminPaymentsPage';
+import AdminStatsPage from '../features/admin/AdminStatsPage';
 import AdminUsersPage from '../features/admin/AdminUsersPage';
 import AdminSubjectsPage from '../features/admin/AdminSubjectsPage';
 import SettingsPage from '../features/settings/SettingsPage';
@@ -171,6 +172,14 @@ const AppRouter = () => {
         element={
           <ProtectedRoute requiredRole="admin">
             <AdminPaymentsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/pagos/estadisticas"
+        element={
+          <ProtectedRoute requiredRole="admin">
+            <AdminStatsPage />
           </ProtectedRoute>
         }
       />
