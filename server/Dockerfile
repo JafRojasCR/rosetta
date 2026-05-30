@@ -6,7 +6,8 @@ ENV NODE_ENV=production
 
 # Install production dependencies
 COPY package*.json ./
-RUN npm ci --only=production
+# Use `npm install` for wider compatibility when package-lock.json is not present
+RUN npm install --production --no-audit --no-fund
 
 # Copy application files
 COPY . .
