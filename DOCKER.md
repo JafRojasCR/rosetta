@@ -18,13 +18,15 @@ Prerequisites
 
 ```bash
 # From repo root
-docker-compose build --no-cache
-docker-compose up -d
+docker compose build --no-cache
+docker compose up -d
 ```
 
 This will create two images and start two containers bound to:
 - Backend: `http://localhost:3000` (API & health endpoint `/api/health`)
 - Frontend: `http://localhost/` (Nginx on port 80)
+
+> The frontend container now uses a custom nginx configuration to proxy requests under `/api` to the backend service inside the Docker network. In local Compose, that target is `http://backend:3000`. If you build the frontend image manually, pass the build argument `VITE_API_URL=/api` so the bundle is generated with the correct API base URL.
 
 3) What each Dockerfile command does and why
 
@@ -46,6 +48,7 @@ Frontend (`client/Dockerfile`)
 - `COPY . .` and `RUN npm run build` — produce optimized `dist/` (Vite output).
 - `FROM nginx:stable-alpine` — production web server to serve static files.
 - `COPY --from=builder /app/dist /usr/share/nginx/html` — copy built static assets into Nginx default folder.
+- `COPY nginx.conf /etc/nginx/conf.d/default.conf` — add the reverse-proxy configuration that forwards `/api` to the backend container.
 - `EXPOSE 80` and `CMD ["nginx", "-g", "daemon off;"]` — serve content.
 
 4) How to set environment variables for containers
@@ -58,8 +61,8 @@ Frontend (`client/Dockerfile`)
 
 ```bash
 docker ps
-docker-compose logs -f backend
-docker-compose logs -f frontend
+docker compose logs -f backend
+docker compose logs -f frontend
 docker inspect <container_id>
 docker exec -it <container_id> /bin/sh   # open shell (alpine/nginx) or /bin/bash for Node image
 ```

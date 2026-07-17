@@ -46,8 +46,11 @@ az acr login --name rosettaregistry
 # Backend: build and tag for ACR
 docker build -t rosettaregistry.azurecr.io/rosetta-backend:latest -f server/Dockerfile server/
 
-# Frontend: build and tag
-docker build -t rosettaregistry.azurecr.io/rosetta-frontend:latest -f client/Dockerfile client/
+# Frontend: build and tag. Use the public backend URL when the frontend and backend are deployed separately.
+docker build \
+  --build-arg VITE_API_URL=https://<your-backend-app>.azurewebsites.net/api \
+  -t rosettaregistry.azurecr.io/rosetta-frontend:latest \
+  -f client/Dockerfile client/
 ```
 
 3. Push to ACR:
@@ -72,6 +75,7 @@ Step 4A — Deploy using Azure App Service for Containers (recommended for web a
    - Save and restart the app.
 3. Create a second App Service for the frontend (or use a static hosting option):
    - For the frontend you can use App Service for Containers with the `rosetta-frontend` image or use Azure Static Web Apps (recommended if you want CDN and serverless APIs).
+   - Important: the frontend container's nginx config proxies `/api` to `http://backend:3000`. That works in local Docker Compose because Compose provides the `backend` hostname, but it will not work when the frontend and backend are deployed as separate Azure services. In Azure, build the frontend image with the backend's public URL (for example `https://<your-backend-app>.azurewebsites.net/api`) or place both behind a shared reverse proxy.
 
 Step 4B — Deploy using Azure Container Instances (quick, per-container)
 
