@@ -1238,7 +1238,7 @@ const AdminClassesPage = () => {
                         rel="noreferrer"
                         className="px-3 py-1.5 rounded-lg text-xs font-black bg-purple-50 text-purple-600"
                       >
-                        Ver Canva
+                        Ver pizarra
                       </a>
                     )}
                   </div>

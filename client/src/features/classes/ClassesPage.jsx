@@ -35,6 +35,22 @@ const formatRightDate = (dateValue) => {
   return `${day}/${month}/${year}`;
 };
 
+const getResourceIcon = (resourceUrl = '') => {
+  const normalizedUrl = String(resourceUrl || '').toLowerCase();
+
+  if (normalizedUrl.includes('wbd.ms')) return '/whiteboardicon.png';
+  if (normalizedUrl.includes('figma.com')) return '/figmaicon.png';
+  return '/canvaicon.png';
+};
+
+const getResourceAltText = (resourceUrl = '') => {
+  const normalizedUrl = String(resourceUrl || '').toLowerCase();
+
+  if (normalizedUrl.includes('wbd.ms')) return 'Whiteboard';
+  if (normalizedUrl.includes('figma.com')) return 'Figma';
+  return 'Canva';
+};
+
 const ClassesPage = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -470,10 +486,14 @@ const ClassesPage = () => {
                           rel="noopener noreferrer"
                           onClick={(event) => openCanvaResource(cls, event)}
                           className="absolute top-3 right-3 bg-white p-2 rounded-xl shadow-lg hover:scale-105 transition-transform"
-                          title="Abrir Canva"
+                          title="Abrir recurso"
                         >
                           {/* intentionally no loading indicator to avoid visual animation on touch */}
-                          <img src="/canvaicon.png" alt="Canva" className="w-7 h-7 object-contain" />
+                          <img
+                            src={getResourceIcon(cls.canvaUrl)}
+                            alt={getResourceAltText(cls.canvaUrl)}
+                            className="w-7 h-7 object-contain"
+                          />
                         </a>
                       )}
                     </div>
