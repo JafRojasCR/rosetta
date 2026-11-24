@@ -60,6 +60,7 @@ const ClassesPage = () => {
   const [classes, setClasses] = useState([]);
   const [expandedId, setExpandedId] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedSubject, setSelectedSubject] = useState('');
   const [sortBy, setSortBy] = useState('date');
   const [sortOrder, setSortOrder] = useState('desc');
   const [isAnimating, setIsAnimating] = useState(false);
@@ -104,6 +105,23 @@ const ClassesPage = () => {
     fetchClasses();
   }, []);
 
+  const subjectOptions = useMemo(() => {
+    const subjects = new Map();
+
+    (classes || []).forEach((cls) => {
+      const name = String(cls.subject?.name || '').trim() || 'Sin materia';
+      const key = name.toLocaleLowerCase();
+      subjects.set(key, name);
+    });
+
+    return [
+      { key: '', label: 'Todas las materias' },
+      ...Array.from(subjects, ([key, label]) => ({ key, label })).sort((a, b) =>
+        a.label.localeCompare(b.label)
+      ),
+    ];
+  }, [classes]);
+
   const classesForStudent = useMemo(() => {
     const enriched = (classes || []).map((cls) => {
       const classStudents = cls.classStudents || [];
@@ -139,6 +157,9 @@ const ClassesPage = () => {
 
     return enriched
       .filter((cls) => {
+        const subjectName = String(cls.subject?.name || '').trim() || 'Sin materia';
+        if (selectedSubject && subjectName.toLocaleLowerCase() !== selectedSubject) return false;
+
         const q = searchQuery.trim().toLowerCase();
         if (!q) return true;
         const searchable = `${cls.displayTitle} ${cls.displayDateShort}`.toLowerCase();
@@ -161,7 +182,7 @@ const ClassesPage = () => {
 
         return sortOrder === 'desc' ? comparison * -1 : comparison;
       });
-  }, [classes, userEmail, searchQuery, sortBy, sortOrder]);
+  }, [classes, userEmail, searchQuery, selectedSubject, sortBy, sortOrder]);
 
   const handleSort = (type) => {
     setIsAnimating(true);
@@ -402,6 +423,44 @@ const ClassesPage = () => {
           isAnimating ? 'opacity-50 scale-[0.99] grayscale-[0.2]' : 'opacity-100 scale-100'
         }`}
       >
+        <div
+          aria-hidden={sortBy !== 'subject'}
+          className={`overflow-hidden transition-all duration-300 ease-out ${
+            sortBy === 'subject'
+              ? 'max-h-64 translate-y-0 opacity-100'
+              : 'pointer-events-none max-h-0 -translate-y-2 opacity-0'
+          }`}
+        >
+          <section className="max-h-[70vh] overflow-y-auto rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+            <div className="mb-3 flex items-center gap-2 text-gray-700">
+              <BookOpen size={17} className="text-blue-600" />
+              <h2 className="text-xs font-black uppercase tracking-widest">Filtrar por materia</h2>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {subjectOptions.map((option) => {
+                const isSelected = selectedSubject === option.key;
+
+                return (
+                  <button
+                    key={option.key ? `subject-${option.key}` : 'all-subjects'}
+                    type="button"
+                    aria-pressed={isSelected}
+                    tabIndex={sortBy === 'subject' ? 0 : -1}
+                    onClick={() => setSelectedSubject(option.key)}
+                    className={`rounded-xl border px-3 py-2 text-xs font-bold transition-all duration-200 ${
+                      isSelected
+                        ? 'border-blue-600 bg-blue-600 text-white shadow-md shadow-blue-100'
+                        : 'border-gray-100 bg-gray-50 text-gray-500 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        </div>
+
         {classesForStudent.length === 0 ? (
           <div className="bg-white rounded-[2rem] p-10 border border-gray-100 text-center text-gray-400 font-semibold">
             No se encontraron clases con ese criterio.
