@@ -161,6 +161,7 @@ const ExamPracticePage = () => {
   const [instructionsOpen, setInstructionsOpen] = useState(false);
   const [timerMode, setTimerMode] = useState('elapsed'); // elapsed | remaining
   const [timerAnimating, setTimerAnimating] = useState(false);
+  const [phaseTransitioning, setPhaseTransitioning] = useState(false);
   const [status, setStatus] = useState('IDLE'); // IDLE | TESTING | FINISHED
   const [view, setView] = useState('EXAM'); // EXAM | BUBBLE_SHEET
   const [questions, setQuestions] = useState([]);
@@ -247,14 +248,18 @@ const ExamPracticePage = () => {
   }, [rawQuestions]);
 
   const startExam = () => {
-    if (rawQuestions.length === 0) return;
-    setQuestions(prepareQuestions(rawQuestions));
-    setBubbleAnswers({});
-    setDraftAnswers({});
-    setCurrentIndex(0);
-    setTimeElapsed(0);
-    setStatus('TESTING');
-    setView('EXAM');
+    if (rawQuestions.length === 0 || phaseTransitioning) return;
+    setPhaseTransitioning(true);
+    setTimeout(() => {
+      setQuestions(prepareQuestions(rawQuestions));
+      setBubbleAnswers({});
+      setDraftAnswers({});
+      setCurrentIndex(0);
+      setTimeElapsed(0);
+      setStatus('TESTING');
+      setView('EXAM');
+      requestAnimationFrame(() => setPhaseTransitioning(false));
+    }, 220);
   };
 
   const goToQuestion = (nextIndex) => {
@@ -396,7 +401,13 @@ const ExamPracticePage = () => {
 
       {/* IDLE VIEW */}
       {status === 'IDLE' && (
-        <main className="flex-1 flex items-center justify-center p-4 sm:p-8">
+        <main
+          className={`flex-1 flex items-center justify-center p-4 sm:p-8 transition-all duration-300 ease-out ${
+            phaseTransitioning
+              ? 'opacity-0 scale-[0.98] translate-y-2'
+              : 'opacity-100 scale-100 translate-y-0'
+          }`}
+        >
           <div className="max-w-3xl w-full bg-white rounded-[2rem] shadow-sm border border-gray-100 p-6 sm:p-10 space-y-8">
             <div className="text-center space-y-3">
               <div className="w-16 h-16 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto">
@@ -651,7 +662,13 @@ const ExamPracticePage = () => {
 
       {/* TESTING VIEW */}
       {status === 'TESTING' && (
-        <main className="flex-1 flex flex-col justify-between max-w-5xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8">
+        <main
+          className={`flex-1 flex flex-col justify-between max-w-5xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8 transition-all duration-300 ease-out ${
+            phaseTransitioning
+              ? 'opacity-0 scale-[0.98] translate-y-2'
+              : 'opacity-100 scale-100 translate-y-0'
+          }`}
+        >
           {view === 'BUBBLE_SHEET' ? (
             <div className="my-auto">
               <BubbleSheetView
