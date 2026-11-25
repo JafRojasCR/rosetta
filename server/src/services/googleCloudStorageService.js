@@ -14,6 +14,7 @@ const {
   gcsDocumentsPrefix,
   gcsClassesPrefix,
   gcsPaymentsPrefix,
+  gcsQuestionsPrefix,
 } = require('../config/env');
 
 let storageClient = null;
@@ -106,6 +107,7 @@ const getPrefixByType = (type = '') => {
   const normalizedType = String(type || '').trim().toLowerCase();
   if (normalizedType === 'classes') return gcsClassesPrefix;
   if (normalizedType === 'payments') return gcsPaymentsPrefix;
+  if (normalizedType === 'questions') return gcsQuestionsPrefix;
   return gcsDocumentsPrefix;
 };
 

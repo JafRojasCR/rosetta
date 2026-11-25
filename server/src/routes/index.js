@@ -8,6 +8,7 @@ const documentRoutes = require('./documentRoutes');
 const subjectRoutes = require('./subjectRoutes');
 const adminRoutes = require('./adminRoutes');
 const translateRoutes = require('./translateRoutes');
+const questionRoutes = require('./questionRoutes');
 
 router.use('/auth', authRoutes);
 router.use('/classes', classRoutes);
@@ -16,5 +17,6 @@ router.use('/documents', documentRoutes);
 router.use('/subjects', subjectRoutes);
 router.use('/admin', adminRoutes);
 router.use('/translate', translateRoutes);
+router.use('/questions', questionRoutes);
 
 module.exports = router;

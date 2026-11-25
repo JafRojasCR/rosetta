@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, UploadCloud, FileText, Trash2 } from 'lucide-react';
 import api from '../../services/api';
 import CustomSelectMenu from '../../components/CustomSelectMenu';
+import FloatingExamButton from '../../components/FloatingExamButton';
 import { uploadToSignedUrl } from '../../services/directUpload';
 
 const AdminDocumentsPage = () => {
@@ -182,7 +183,7 @@ const AdminDocumentsPage = () => {
       <nav className="bg-white px-4 sm:px-8 py-4 flex items-center justify-between gap-3 shadow-sm">
         <div className="flex items-center gap-4">
           <button
-            onClick={() => navigate(-1)}
+            onClick={() => navigate('/dashboard')}
             className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-600"
             type="button"
           >
@@ -360,6 +361,8 @@ const AdminDocumentsPage = () => {
           </div>
         </div>
       </main>
+
+      <FloatingExamButton onClick={() => navigate('/admin/preguntas')} />
 
       <footer className="py-4 sm:py-6 text-center text-gray-400 text-xs sm:text-sm border-t border-gray-100 bg-white/60">
         © 2026 Rosetta - Plataforma de Aula Virtual

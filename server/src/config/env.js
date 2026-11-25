@@ -101,4 +101,5 @@ module.exports = {
   gcsDocumentsPrefix: process.env.GCS_DOCUMENTS_PREFIX || 'documents',
   gcsClassesPrefix: process.env.GCS_CLASSES_PREFIX || 'classes',
   gcsPaymentsPrefix: process.env.GCS_PAYMENTS_PREFIX || 'payments',
+  gcsQuestionsPrefix: process.env.GCS_QUESTIONS_PREFIX || 'questions',
 };

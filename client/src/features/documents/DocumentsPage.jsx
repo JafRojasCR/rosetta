@@ -13,6 +13,7 @@ import {
 import api from '../../services/api';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import CustomVideoPlayer from '../../components/CustomVideoPlayer';
+import FloatingExamButton from '../../components/FloatingExamButton';
 
 const DOCUMENT_THUMB =
   'https://images.unsplash.com/photo-1544640808-32ca72ac7f37?q=80&w=600&auto=format&fit=crop';
@@ -256,7 +257,7 @@ const DocumentsPage = () => {
       <nav className="bg-white px-4 sm:px-8 py-4 flex items-center justify-between gap-3 shadow-sm z-10">
         <div className="flex items-center gap-4">
           <button
-            onClick={() => navigate(-1)}
+            onClick={() => navigate('/dashboard')}
             className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-600"
             type="button"
           >
@@ -579,6 +580,8 @@ const DocumentsPage = () => {
           </div>
         </div>
       )}
+
+      <FloatingExamButton onClick={() => navigate('/practica-examen')} />
 
       <footer className="py-4 sm:py-6 text-center text-gray-400 text-xs sm:text-sm border-t border-gray-100 bg-white/60 mt-auto">
         © 2026 Rosetta - Plataforma de Aula Virtual

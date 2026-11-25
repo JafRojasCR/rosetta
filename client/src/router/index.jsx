@@ -16,12 +16,14 @@ import PaymentsPage from '../features/payments/PaymentsPage';
 import PaymentFormPage from '../features/payments/PaymentFormPage';
 import DocumentsPage from '../features/documents/DocumentsPage';
 import AdminDocumentsPage from '../features/documents/AdminDocumentsPage';
+import ExamPracticePage from '../features/exam/ExamPracticePage';
 import AdminClassesPage from '../features/admin/AdminClassesPage';
 import AdminCalendarPage from '../features/admin/AdminCalendarPage';
 import AdminPaymentsPage from '../features/admin/AdminPaymentsPage';
 import AdminStatsPage from '../features/admin/AdminStatsPage';
 import AdminUsersPage from '../features/admin/AdminUsersPage';
 import AdminSubjectsPage from '../features/admin/AdminSubjectsPage';
+import AdminQuestionsPage from '../features/admin/AdminQuestionsPage';
 import SettingsPage from '../features/settings/SettingsPage';
 import ProfilePage from '../features/profile/ProfilePage';
 import NotFoundPage from '../features/not-found/NotFoundPage';
@@ -139,10 +141,28 @@ const AppRouter = () => {
         }
       />
       <Route
+        path="/practica-examen"
+        element={
+          <ProtectedRoute>
+            <MainLayout>
+              <ExamPracticePage />
+            </MainLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path="/admin/recursos"
         element={
           <ProtectedRoute requiredRole="admin">
             <AdminDocumentsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/preguntas"
+        element={
+          <ProtectedRoute requiredRole="admin">
+            <AdminQuestionsPage />
           </ProtectedRoute>
         }
       />
