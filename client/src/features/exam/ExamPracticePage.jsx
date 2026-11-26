@@ -12,6 +12,7 @@ import {
   FileText,
   GraduationCap,
   HelpCircle,
+  Lock,
   Play,
   RotateCcw,
   Timer,
@@ -55,6 +56,16 @@ const formatTime = (seconds) => {
   const m = Math.floor((safe % 3600) / 60);
   const s = safe % 60;
   return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+};
+
+const formatMinutesLabel = (totalMinutes) => {
+  const safe = Math.max(1, Number(totalMinutes) || 110);
+  const h = Math.floor(safe / 60);
+  const m = safe % 60;
+  const parts = [];
+  if (h > 0) parts.push(`${h}h`);
+  if (m > 0) parts.push(`${m}m`);
+  return parts.join(' ') || '0m';
 };
 
 const BubbleSheetView = ({
@@ -149,20 +160,31 @@ const ExamPracticePage = () => {
   const navigate = useNavigate();
 
   const [isVisible, setIsVisible] = useState(false);
+  const [isExiting, setIsExiting] = useState(false);
+  const [isIdleExiting, setIsIdleExiting] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadingExamDetail, setLoadingExamDetail] = useState(false);
   const [error, setError] = useState('');
+
+  const [availableExams, setAvailableExams] = useState([]);
+  const [selectedExam, setSelectedExam] = useState(null);
   const [rawQuestions, setRawQuestions] = useState([]);
 
+  // Pre-exam settings
   const [notaPresentacion, setNotaPresentacion] = useState(String(DEFAULT_NOTA_PRESENTACION));
+  const [useUcrScale, setUseUcrScale] = useState(true);
+  const [useBubbleSheet, setUseBubbleSheet] = useState(true);
   const [durationPreset, setDurationPreset] = useState('ucr');
   const [customHours, setCustomHours] = useState(1);
   const [customMinutes, setCustomMinutes] = useState(50);
   const [showGuides, setShowGuides] = useState(true);
   const [instructionsOpen, setInstructionsOpen] = useState(false);
+
+  // Testing state
   const [timerMode, setTimerMode] = useState('elapsed'); // elapsed | remaining
   const [timerAnimating, setTimerAnimating] = useState(false);
   const [phaseTransitioning, setPhaseTransitioning] = useState(false);
-  const [status, setStatus] = useState('IDLE'); // IDLE | TESTING | FINISHED
+  const [status, setStatus] = useState('LIST'); // LIST | IDLE | TESTING | FINISHED
   const [view, setView] = useState('EXAM'); // EXAM | BUBBLE_SHEET
   const [questions, setQuestions] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -183,19 +205,55 @@ const ExamPracticePage = () => {
   }, [loading]);
 
   useEffect(() => {
-    const fetchQuestions = async () => {
+    const fetchExams = async () => {
       try {
-        const response = await api.get('/questions');
-        setRawQuestions(response.data?.data || []);
+        const response = await api.get('/exams');
+        setAvailableExams(response.data?.data || []);
       } catch (err) {
-        setError(err.response?.data?.message || 'Error al cargar el banco de preguntas.');
+        setError(err.response?.data?.message || 'Error al cargar los exámenes disponibles.');
       } finally {
         setLoading(false);
       }
     };
 
-    fetchQuestions();
+    fetchExams();
   }, []);
+
+  const handleSelectExam = async (examItem) => {
+    setError('');
+    setLoadingExamDetail(true);
+    try {
+      const response = await api.get(`/exams/${examItem._id}`);
+      const fullExam = response.data?.data;
+      if (!fullExam) throw new Error('No se pudo cargar el examen.');
+
+      const mins = Math.max(1, Number(fullExam.recommendedMinutes) || 110);
+      if (mins === 110) {
+        setDurationPreset('ucr');
+        setCustomHours(1);
+        setCustomMinutes(50);
+      } else if (mins === 150) {
+        setDurationPreset('tec');
+        setCustomHours(2);
+        setCustomMinutes(30);
+      } else {
+        setDurationPreset('custom');
+        setCustomHours(Math.floor(mins / 60));
+        setCustomMinutes(mins % 60);
+      }
+
+      setSelectedExam(fullExam);
+      setRawQuestions(fullExam.questions || []);
+      setUseBubbleSheet(fullExam.useBubbleSheetDefault !== false);
+      setUseUcrScale(true);
+      setInstructionsOpen(false);
+      setStatus('IDLE');
+    } catch (err) {
+      setError(err.response?.data?.message || 'No se pudo cargar el examen seleccionado.');
+    } finally {
+      setLoadingExamDetail(false);
+    }
+  };
 
   const examDurationSeconds = useMemo(() => {
     const h = Math.max(0, Math.min(12, Number(customHours) || 0));
@@ -271,10 +329,12 @@ const ExamPracticePage = () => {
     }, 140);
   };
 
+  const activeAnswers = useBubbleSheet ? bubbleAnswers : draftAnswers;
+
   const calculateResult = useCallback(() => {
     let correctas = 0;
     questions.forEach((q, idx) => {
-      if (bubbleAnswers[idx] === q.correcta) {
+      if (activeAnswers[idx] === q.correcta) {
         correctas++;
       }
     });
@@ -297,18 +357,18 @@ const ExamPracticePage = () => {
       notaPAA: notaPAA.toFixed(1),
       tiempoRestante: Math.max(0, examDurationSeconds - timeElapsed),
     };
-  }, [questions, bubbleAnswers, timeElapsed, notaPresentacion, examDurationSeconds]);
+  }, [questions, activeAnswers, timeElapsed, notaPresentacion, examDurationSeconds]);
 
-  if (loading) return <LoadingSpinner />;
+  if (loading || loadingExamDetail) return <LoadingSpinner />;
 
   const currentQ = questions[currentIndex];
-  const answeredInSheetCount = Object.keys(bubbleAnswers).length;
-  const omittedCount = Math.max(0, questions.length - answeredInSheetCount);
+  const answeredCount = Object.values(activeAnswers).filter((v) => v !== undefined).length;
+  const omittedCount = Math.max(0, questions.length - answeredCount);
 
   return (
     <div
       className={`min-h-screen bg-gray-100 font-['Poppins'] flex flex-col transform transition-all duration-700 ease-out ${
-        isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
+        isVisible && !isExiting ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
       }`}
     >
       <style>
@@ -319,10 +379,22 @@ const ExamPracticePage = () => {
       <nav className="bg-white px-4 sm:px-8 py-4 flex flex-wrap items-center justify-between gap-3 shadow-sm z-20 sticky top-0">
         <div className="flex items-center gap-3 sm:gap-4">
           <button
-            onClick={() => navigate('/recursos')}
+            onClick={() => {
+              if (status === 'IDLE') {
+                setIsIdleExiting(true);
+                setTimeout(() => {
+                  setIsIdleExiting(false);
+                  setStatus('LIST');
+                  setSelectedExam(null);
+                }, 300);
+              } else {
+                setIsExiting(true);
+                setTimeout(() => navigate('/recursos'), 320);
+              }
+            }}
             className="p-2 hover:bg-gray-100 rounded-full text-gray-600 transition-colors"
             type="button"
-            aria-label="Volver a recursos"
+            aria-label="Volver"
           >
             <ArrowLeft size={24} />
           </button>
@@ -359,36 +431,38 @@ const ExamPracticePage = () => {
               </button>
             )}
 
-            <div className="inline-flex bg-gray-50 p-1 rounded-2xl border border-gray-100">
-              <button
-                type="button"
-                onClick={() => setView('EXAM')}
-                className={`flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-300 ${
-                  view === 'EXAM'
-                    ? 'bg-blue-600 text-white shadow-md shadow-blue-200'
-                    : 'text-gray-400 hover:text-gray-600'
-                }`}
-              >
-                <BookOpen size={14} />
-                <span>Folleto</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setView('BUBBLE_SHEET')}
-                className={`flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-300 ${
-                  view === 'BUBBLE_SHEET'
-                    ? 'bg-slate-900 text-white shadow-md'
-                    : 'text-gray-400 hover:text-gray-600'
-                }`}
-              >
-                <ClipboardList size={14} />
-                <span className="hidden sm:inline">Hoja de Respuestas</span>
-                <span className="sm:hidden">Hoja</span>
-                <span className="ml-1 px-1.5 py-0.5 rounded-full bg-white/20 text-[10px]">
-                  {answeredInSheetCount}/{questions.length}
-                </span>
-              </button>
-            </div>
+            {useBubbleSheet && (
+              <div className="inline-flex bg-gray-50 p-1 rounded-2xl border border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => setView('EXAM')}
+                  className={`flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-300 ${
+                    view === 'EXAM'
+                      ? 'bg-blue-600 text-white shadow-md shadow-blue-200'
+                      : 'text-gray-400 hover:text-gray-600'
+                  }`}
+                >
+                  <BookOpen size={14} />
+                  <span>Folleto</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setView('BUBBLE_SHEET')}
+                  className={`flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-300 ${
+                    view === 'BUBBLE_SHEET'
+                      ? 'bg-slate-900 text-white shadow-md'
+                      : 'text-gray-400 hover:text-gray-600'
+                  }`}
+                >
+                  <ClipboardList size={14} />
+                  <span className="hidden sm:inline">Hoja de Respuestas</span>
+                  <span className="sm:hidden">Hoja</span>
+                  <span className="ml-1 px-1.5 py-0.5 rounded-full bg-white/20 text-[10px]">
+                    {answeredCount}/{questions.length}
+                  </span>
+                </button>
+              </div>
+            )}
           </div>
         )}
       </nav>
@@ -399,35 +473,107 @@ const ExamPracticePage = () => {
         </div>
       )}
 
-      {/* IDLE VIEW */}
+      {/* LIST VIEW: Available Exams */}
+      {status === 'LIST' && (
+        <main className="max-w-5xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-10 flex-1 space-y-8">
+          <div className="text-center space-y-2">
+            <div className="w-14 h-14 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto">
+              <GraduationCap size={28} />
+            </div>
+            <h2 className="text-2xl sm:text-4xl font-black text-gray-900 tracking-tight">
+              Exámenes y Quices Disponibles
+            </h2>
+            <p className="text-sm text-gray-500 font-medium">
+              Selecciona una práctica para configurar tus preferencias y comenzar.
+            </p>
+          </div>
+
+          {availableExams.length === 0 ? (
+            <div className="bg-white rounded-[2rem] p-10 border border-gray-100 text-center space-y-2 max-w-2xl mx-auto">
+              <p className="text-gray-700 font-bold text-lg">
+                Aún no hay exámenes disponibles
+              </p>
+              <p className="text-gray-400 text-sm">
+                Tu tutor o administrador debe publicar exámenes o quices para que aparezcan aquí.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              {availableExams.map((exam) => (
+                <button
+                  key={exam._id}
+                  type="button"
+                  onClick={() => handleSelectExam(exam)}
+                  className="group bg-white rounded-[2rem] p-6 sm:p-7 text-left border-2 border-transparent hover:border-blue-500 shadow-sm hover:shadow-lg transition-all duration-200 flex flex-col justify-between gap-5"
+                >
+                  <div className="space-y-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <h3 className="text-xl font-black text-gray-900 group-hover:text-blue-600 transition-colors">
+                        {exam.title}
+                      </h3>
+                      <span className="p-2 rounded-xl bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                        <ChevronRight size={18} />
+                      </span>
+                    </div>
+                    {exam.description && (
+                      <p className="text-sm text-gray-500 font-medium leading-relaxed">
+                        {exam.description}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap gap-2 pt-3 border-t border-gray-100">
+                    <span className="inline-flex items-center gap-1.5 text-xs font-black text-blue-600 bg-blue-50 px-3 py-1.5 rounded-full">
+                      <BookOpen size={13} /> {exam.questionIds?.length || 0} preguntas
+                    </span>
+                    <span className="inline-flex items-center gap-1.5 text-xs font-bold text-gray-600 bg-gray-50 border border-gray-100 px-3 py-1.5 rounded-full">
+                      <Timer size={13} className="text-blue-600" />{' '}
+                      {formatMinutesLabel(exam.recommendedMinutes)}
+                    </span>
+                    <span className="inline-flex items-center gap-1.5 text-xs font-bold text-gray-500 bg-gray-50 border border-gray-100 px-3 py-1.5 rounded-full">
+                      {exam.lockBubbleSheet && <Lock size={12} className="text-amber-500" />}
+                      {exam.useBubbleSheetDefault ? 'Con hoja' : 'Solo folleto'}
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </main>
+      )}
+
+      {/* IDLE VIEW: Pre-Exam Configuration */}
       {status === 'IDLE' && (
         <main
           className={`flex-1 flex items-center justify-center p-4 sm:p-8 transition-all duration-300 ease-out ${
-            phaseTransitioning
+            phaseTransitioning || isIdleExiting
               ? 'opacity-0 scale-[0.98] translate-y-2'
               : 'opacity-100 scale-100 translate-y-0'
           }`}
         >
-          <div className="max-w-3xl w-full bg-white rounded-[2rem] shadow-sm border border-gray-100 p-6 sm:p-10 space-y-8">
-            <div className="text-center space-y-3">
+          <div className="max-w-3xl w-full bg-white rounded-[2rem] shadow-sm border border-gray-100 p-6 sm:p-10 space-y-6">
+            <div className="text-center space-y-2">
               <div className="w-16 h-16 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto">
                 <GraduationCap size={32} />
               </div>
               <h2 className="text-2xl sm:text-4xl font-black text-gray-900 tracking-tight">
-                Prueba de Aptitud Académica
+                {selectedExam?.title || 'Práctica de Examen'}
               </h2>
-              <p className="text-xs sm:text-sm font-bold text-gray-400 uppercase tracking-widest">
-                Simulador de Admisión • Rosetta
+              {selectedExam?.description && (
+                <p className="text-sm text-gray-500 font-medium">{selectedExam.description}</p>
+              )}
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">
+                Simulador • Rosetta
               </p>
             </div>
 
             {rawQuestions.length === 0 ? (
               <div className="bg-gray-50 border border-gray-100 rounded-2xl p-8 text-center space-y-2">
                 <p className="text-gray-700 font-bold text-lg">
-                  Aún no hay preguntas disponibles
+                  Este examen no tiene preguntas activas
                 </p>
                 <p className="text-gray-400 text-sm">
-                  Tu tutor o administrador debe agregar preguntas al banco para habilitar el simulacro.
+                  Selecciona otro examen de la lista o consulta con tu tutor.
                 </p>
               </div>
             ) : (
@@ -446,6 +592,7 @@ const ExamPracticePage = () => {
                   </div>
                 )}
 
+                {/* Acordeón de instrucciones */}
                 <div className="bg-blue-50 rounded-2xl border border-blue-100 overflow-hidden transition-all duration-300">
                   <button
                     type="button"
@@ -476,14 +623,22 @@ const ExamPracticePage = () => {
                       <div className="px-6 pb-6 pt-1">
                         <ul className="space-y-2.5 text-sm text-gray-700 list-disc pl-5 font-medium">
                           <li>
-                            El examen consta de <strong>{rawQuestions.length} preguntas</strong> de razonamiento en orden aleatorio.
+                            El examen consta de <strong>{rawQuestions.length} preguntas</strong> en orden aleatorio.
                           </li>
                           <li>
                             Dispones de un tiempo límite de <strong>{formattedDurationText}</strong>.
                           </li>
                           <li>
-                            <strong>IMPORTANTE:</strong> Solo las respuestas marcadas en la{' '}
-                            <strong>Hoja de Respuestas (Hoja de Bolitas)</strong> serán calificadas. Las marcas en el folleto son solo para tu referencia.
+                            {useBubbleSheet ? (
+                              <>
+                                <strong>IMPORTANTE:</strong> Solo las respuestas marcadas en la{' '}
+                                <strong>Hoja de Respuestas (Hoja de Bolitas)</strong> serán calificadas. Las marcas en el folleto son solo para tu referencia.
+                              </>
+                            ) : (
+                              <>
+                                <strong>IMPORTANTE:</strong> La hoja de respuestas está desactivada; tus respuestas marcadas directamente en el <strong>Folleto</strong> serán calificadas.
+                              </>
+                            )}
                           </li>
                         </ul>
                       </div>
@@ -499,7 +654,7 @@ const ExamPracticePage = () => {
                         Duración del examen
                       </span>
                       <p className="text-xs text-gray-400 font-medium mt-0.5">
-                        Elige un formato oficial o define tu propio tiempo.
+                        Recomendado por tu tutor: {formatMinutesLabel(selectedExam?.recommendedMinutes)}. Puedes ajustarlo si deseas.
                       </p>
                     </div>
                     <span className="inline-flex items-center gap-1.5 text-xs font-black text-blue-600 bg-blue-50 px-3 py-1.5 rounded-full self-start sm:self-auto">
@@ -586,28 +741,125 @@ const ExamPracticePage = () => {
                   )}
                 </div>
 
+                {/* Hoja de Respuestas Toggle (respetando lock del admin) */}
                 <div className="bg-gray-50 p-5 rounded-2xl border border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div>
-                    <label
-                      htmlFor="nota-presentacion-input"
-                      className="block text-xs font-black uppercase tracking-widest text-gray-500"
-                    >
-                      Nota de presentación (Colegio)
-                    </label>
+                    <span className="text-xs font-black uppercase tracking-widest text-gray-500 flex items-center gap-1.5">
+                      Hoja de respuestas (bolitas)
+                      {selectedExam?.lockBubbleSheet && (
+                        <span className="inline-flex items-center gap-1 text-[10px] text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
+                          <Lock size={10} /> Fijado
+                        </span>
+                      )}
+                    </span>
                     <p className="text-xs text-gray-400 font-medium mt-0.5">
-                      Se utiliza para calcular tu puntaje estimado de admisión.
+                      {useBubbleSheet
+                        ? 'Solo se calificará lo marcado en la hoja de respuestas.'
+                        : 'Se calificará directamente lo que marques en el folleto.'}
                     </p>
                   </div>
-                  <input
-                    id="nota-presentacion-input"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    max="100"
-                    value={notaPresentacion}
-                    onChange={(e) => setNotaPresentacion(e.target.value)}
-                    className="w-full sm:w-32 bg-white border-2 border-gray-200 focus:border-blue-500 rounded-2xl px-4 py-2.5 text-center font-black text-gray-900 outline-none transition-colors"
-                  />
+                  <div
+                    className={`inline-flex bg-white p-1 rounded-2xl border border-gray-200 self-start sm:self-auto ${
+                      selectedExam?.lockBubbleSheet ? 'opacity-60 pointer-events-none' : ''
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      disabled={Boolean(selectedExam?.lockBubbleSheet)}
+                      onClick={() => setUseBubbleSheet(true)}
+                      className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
+                        useBubbleSheet
+                          ? 'bg-blue-600 text-white shadow-sm'
+                          : 'text-gray-400 hover:text-gray-600'
+                      }`}
+                    >
+                      Activada
+                    </button>
+                    <button
+                      type="button"
+                      disabled={Boolean(selectedExam?.lockBubbleSheet)}
+                      onClick={() => setUseBubbleSheet(false)}
+                      className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
+                        !useBubbleSheet
+                          ? 'bg-slate-900 text-white shadow-sm'
+                          : 'text-gray-400 hover:text-gray-600'
+                      }`}
+                    >
+                      Desactivada
+                    </button>
+                  </div>
+                </div>
+
+                {/* Escala 200-800 vs 0-100 + Nota de presentación animada */}
+                <div className="bg-gray-50 p-5 rounded-2xl border border-gray-100 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                      <span className="block text-xs font-black uppercase tracking-widest text-gray-500">
+                        Resultado de admision
+                      </span>
+                      <p className="text-xs text-gray-400 font-medium mt-0.5">
+                        Elige entre puntaje estimado de admisión o nota del examen.
+                      </p>
+                    </div>
+                    <div className="inline-flex bg-white p-1 rounded-2xl border border-gray-200 self-start sm:self-auto">
+                      <button
+                        type="button"
+                        onClick={() => setUseUcrScale(true)}
+                        className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
+                          useUcrScale
+                            ? 'bg-blue-600 text-white shadow-sm'
+                            : 'text-gray-400 hover:text-gray-600'
+                        }`}
+                      >
+                        Admisión
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setUseUcrScale(false)}
+                        className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
+                          !useUcrScale
+                            ? 'bg-slate-900 text-white shadow-sm'
+                            : 'text-gray-400 hover:text-gray-600'
+                        }`}
+                      >
+                        Examen
+                      </button>
+                    </div>
+                  </div>
+
+                  <div
+                    className={`grid transition-all duration-300 ease-in-out ${
+                      useUcrScale
+                        ? 'grid-rows-[1fr] opacity-100'
+                        : 'grid-rows-[0fr] opacity-0'
+                    }`}
+                  >
+                    <div className="overflow-hidden">
+                      <div className="pt-3 border-t border-gray-200/70 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div>
+                          <label
+                            htmlFor="nota-presentacion-input"
+                            className="block text-xs font-black uppercase tracking-widest text-gray-500"
+                          >
+                            Nota de presentación (Colegio)
+                          </label>
+                          <p className="text-xs text-gray-400 font-medium mt-0.5">
+                            Se utiliza para calcular tu puntaje estimado 200–800.
+                          </p>
+                        </div>
+                        <input
+                          id="nota-presentacion-input"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          max="100"
+                          value={notaPresentacion}
+                          onChange={(e) => setNotaPresentacion(e.target.value)}
+                          className="w-full sm:w-32 bg-white border-2 border-gray-200 focus:border-blue-500 rounded-2xl px-4 py-2.5 text-center font-black text-gray-900 outline-none transition-colors"
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Guías / Modo realista */}
@@ -669,7 +921,7 @@ const ExamPracticePage = () => {
               : 'opacity-100 scale-100 translate-y-0'
           }`}
         >
-          {view === 'BUBBLE_SHEET' ? (
+          {useBubbleSheet && view === 'BUBBLE_SHEET' ? (
             <div className="my-auto">
               <BubbleSheetView
                 questions={questions}
@@ -758,16 +1010,18 @@ const ExamPracticePage = () => {
                   </div>
                 </div>
 
-                <div className="mt-8 pt-5 border-t border-gray-100 flex flex-wrap items-center justify-between gap-2 text-[11px] font-bold uppercase tracking-widest text-gray-400">
-                  {showGuides ? <span>Borrador del folleto (no califica)</span> : <span />}
-                  <button
-                    type="button"
-                    onClick={() => setView('BUBBLE_SHEET')}
-                    className="text-blue-600 hover:underline font-black"
-                  >
-                    Ir a Hoja de Respuestas →
-                  </button>
-                </div>
+                {useBubbleSheet && (
+                  <div className="mt-8 pt-5 border-t border-gray-100 flex flex-wrap items-center justify-between gap-2 text-[11px] font-bold uppercase tracking-widest text-gray-400">
+                    {showGuides ? <span>Borrador del folleto (no califica)</span> : <span />}
+                    <button
+                      type="button"
+                      onClick={() => setView('BUBBLE_SHEET')}
+                      className="text-blue-600 hover:underline font-black"
+                    >
+                      Ir a Hoja de Respuestas →
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Footer Pagination */}
@@ -783,14 +1037,25 @@ const ExamPracticePage = () => {
                 </button>
 
                 {currentIndex === questions.length - 1 ? (
-                  <button
-                    type="button"
-                    onClick={() => setView('BUBBLE_SHEET')}
-                    className="flex items-center gap-2 px-6 sm:px-8 py-3.5 rounded-2xl font-black text-xs uppercase tracking-widest bg-slate-900 text-white hover:bg-slate-800 shadow-lg transition-all"
-                  >
-                    Ir a Hoja de Respuestas
-                    <ChevronRight size={18} />
-                  </button>
+                  useBubbleSheet ? (
+                    <button
+                      type="button"
+                      onClick={() => setView('BUBBLE_SHEET')}
+                      className="flex items-center gap-2 px-6 sm:px-8 py-3.5 rounded-2xl font-black text-xs uppercase tracking-widest bg-slate-900 text-white hover:bg-slate-800 shadow-lg transition-all"
+                    >
+                      Ir a Hoja de Respuestas
+                      <ChevronRight size={18} />
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmFinish(true)}
+                      className="flex items-center gap-2 px-6 sm:px-8 py-3.5 rounded-2xl font-black text-xs uppercase tracking-widest bg-red-600 text-white hover:bg-red-700 shadow-lg shadow-red-200 transition-all"
+                    >
+                      Finalizar y Calificar
+                      <ChevronRight size={18} />
+                    </button>
+                  )
                 ) : (
                   <button
                     type="button"
@@ -814,14 +1079,15 @@ const ExamPracticePage = () => {
           <main className="max-w-4xl w-full mx-auto px-4 sm:px-6 py-8 pb-16 space-y-8">
             <div className="bg-blue-600 rounded-[2rem] p-8 sm:p-12 text-white text-center shadow-xl shadow-blue-200">
               <p className="uppercase tracking-widest text-xs font-black mb-3 opacity-80">
-                Promedio de Admisión Estimado
+                {useUcrScale ? 'Promedio de Admisión Estimado' : 'Calificación Obtenida (0 – 100)'}
               </p>
               <h2 className="text-6xl sm:text-8xl font-black tracking-tight mb-4">
-                {res.puntaje}
+                {useUcrScale ? res.puntaje : res.notaPAA}
               </h2>
               <div className="max-w-xs mx-auto h-1 bg-white/25 rounded-full mb-4" />
               <p className="text-base sm:text-lg font-bold">
-                {res.correctas} aciertos de {res.total} preguntas ({res.notaPAA}%)
+                {res.correctas} aciertos de {res.total} preguntas
+                {useUcrScale ? ` (${res.notaPAA}%)` : ''}
               </p>
               <div className="flex flex-wrap justify-center gap-4 sm:gap-8 mt-6 text-xs sm:text-sm font-bold opacity-85">
                 <span>Tiempo empleado: {formatTime(timeElapsed)}</span>
@@ -837,7 +1103,7 @@ const ExamPracticePage = () => {
 
               <div className="space-y-12">
                 {questions.map((q, idx) => {
-                  const userChoice = bubbleAnswers[idx];
+                  const userChoice = activeAnswers[idx];
                   const isCorrect = userChoice === q.correcta;
                   const wasAnswered = userChoice !== undefined;
 
@@ -862,7 +1128,7 @@ const ExamPracticePage = () => {
                             </span>
                             {!wasAnswered && (
                               <span className="bg-amber-50 text-amber-700 text-[10px] px-2.5 py-1 rounded-full font-black uppercase tracking-wider">
-                                Omitida en hoja
+                                {useBubbleSheet ? 'Omitida en hoja' : 'Omitida'}
                               </span>
                             )}
                           </div>
@@ -939,14 +1205,17 @@ const ExamPracticePage = () => {
                   onClick={() => setStatus('IDLE')}
                   className="flex-1 py-4 px-6 bg-blue-600 hover:bg-blue-700 text-white font-black rounded-2xl shadow-lg shadow-blue-200 transition-all flex items-center justify-center gap-2 text-sm uppercase tracking-wider"
                 >
-                  <RotateCcw size={18} /> Realizar Nuevo Simulacro
+                  <RotateCcw size={18} /> Repetir Examen
                 </button>
                 <button
                   type="button"
-                  onClick={() => navigate('/recursos')}
+                  onClick={() => {
+                    setStatus('LIST');
+                    setSelectedExam(null);
+                  }}
                   className="py-4 px-6 bg-gray-100 hover:bg-gray-200 text-gray-700 font-black rounded-2xl transition-all text-sm uppercase tracking-wider"
                 >
-                  Volver a Recursos
+                  Elegir Otro
                 </button>
               </div>
             </div>
@@ -968,8 +1237,16 @@ const ExamPracticePage = () => {
             </div>
             <h4 className="text-2xl font-black text-gray-900">¿Finalizar Examen?</h4>
             <p className="text-gray-500 text-sm leading-relaxed">
-              Se calificarán únicamente las{' '}
-              <strong>{answeredInSheetCount} respuestas</strong> marcadas en la Hoja de Respuestas.
+              {useBubbleSheet ? (
+                <>
+                  Se calificarán únicamente las{' '}
+                  <strong>{answeredCount} respuestas</strong> marcadas en la Hoja de Respuestas.
+                </>
+              ) : (
+                <>
+                  Se calificarán las <strong>{answeredCount} respuestas</strong> marcadas en el folleto.
+                </>
+              )}
               {omittedCount > 0 && (
                 <>
                   {' '}
