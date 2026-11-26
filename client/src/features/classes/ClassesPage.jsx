@@ -55,6 +55,15 @@ const ClassesPage = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const userEmail = String(user?.email || '').toLowerCase();
+  const userCourses = useMemo(
+    () =>
+      new Set(
+        (Array.isArray(user?.cursos) ? user.cursos : [])
+          .map((c) => String(c || '').trim().toLowerCase())
+          .filter(Boolean)
+      ),
+    [user?.cursos]
+  );
 
   const [isVisible, setIsVisible] = useState(false);
   const [classes, setClasses] = useState([]);
@@ -128,11 +137,13 @@ const ClassesPage = () => {
       const currentStudentEntry = classStudents.find(
         (entry) => entry?.student?.email?.toLowerCase() === userEmail
       );
-      const unlocked = classStudents.some(
+      const subjectId = String(cls.subject?.subjectId || '').trim().toLowerCase();
+      const unlockedByClass = classStudents.some(
         (entry) =>
           entry?.student?.email?.toLowerCase() === userEmail &&
           entry?.unlocked === true
       );
+      const unlocked = unlockedByClass || (Boolean(subjectId) && userCourses.has(subjectId));
 
       const dayMonth = formatDayMonth(cls.date);
       const title = String(cls.title || '').trim();
@@ -182,7 +193,7 @@ const ClassesPage = () => {
 
         return sortOrder === 'desc' ? comparison * -1 : comparison;
       });
-  }, [classes, userEmail, searchQuery, selectedSubject, sortBy, sortOrder]);
+  }, [classes, userEmail, userCourses, searchQuery, selectedSubject, sortBy, sortOrder]);
 
   const handleSort = (type) => {
     setIsAnimating(true);

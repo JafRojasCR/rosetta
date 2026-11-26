@@ -55,8 +55,13 @@ const AdminStatsPage = () => {
   const [loading, setLoading] = useState(true);
   const [payments, setPayments] = useState([]);
   const [classes, setClasses] = useState([]);
+  const [subjects, setSubjects] = useState([]);
   const [students, setStudents] = useState([]);
   const [error, setError] = useState('');
+
+  // Tabs & Type Filters
+  const [activeTab, setActiveTab] = useState('general'); // general, courses
+  const [paymentTypeFilter, setPaymentTypeFilter] = useState('all'); // all, class, course
 
   // Date Filters
   const [presetRange, setPresetRange] = useState('all'); // 30days, 90days, year, all
@@ -66,6 +71,9 @@ const AdminStatsPage = () => {
   // Trends Chart Filter
   const [granularity, setGranularity] = useState('daily'); // daily, weekly, monthly
   const [hoveredDataPoint, setHoveredDataPoint] = useState(null);
+  const [chartMonthMode, setChartMonthMode] = useState('last8'); // last8, all, custom
+  const [customChartMonths, setCustomChartMonths] = useState([]);
+  const [showMonthSelector, setShowMonthSelector] = useState(false);
 
   // Performance Calendar Date
   const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
@@ -84,14 +92,16 @@ const AdminStatsPage = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [paymentsResponse, classesResponse, studentsResponse] = await Promise.all([
+        const [paymentsResponse, classesResponse, subjectsResponse, studentsResponse] = await Promise.all([
           api.get('/payments/all'),
           api.get('/classes'),
+          api.get('/subjects'),
           api.get('/admin/students'),
         ]);
 
         setPayments(paymentsResponse.data?.data || []);
         setClasses(classesResponse.data?.data || []);
+        setSubjects(subjectsResponse.data?.data || []);
         setStudents(studentsResponse.data?.data || []);
       } catch (_requestError) {
         setError('No se pudieron cargar los datos para las estadísticas.');
@@ -110,6 +120,14 @@ const AdminStatsPage = () => {
       return acc;
     }, {});
   }, [classes]);
+
+  const subjectsById = useMemo(() => {
+    return (subjects || []).reduce((acc, subj) => {
+      const id = String(subj?.subjectId || '').trim().toLowerCase();
+      if (id) acc[id] = subj;
+      return acc;
+    }, {});
+  }, [subjects]);
 
   const studentsByEmail = useMemo(() => {
     return (students || []).reduce((acc, s) => {
@@ -130,18 +148,29 @@ const AdminStatsPage = () => {
     return (payments || [])
       .filter((p) => p.status === 'aprobado')
       .map((p) => {
-        const cls = classesByCode[String(p.classCode || '').trim()];
-        const amountVal = cls ? (cls.price ?? 0) : (p.amount ?? 0);
+        const code = String(p.classCode || '').trim();
+        const cls = classesByCode[code];
+        const courseSubject = subjectsById[code.toLowerCase()];
+        const isCoursePayment =
+          p.paymentType === 'course' || (!cls && Boolean(courseSubject?.isCourse));
+        const amountVal = isCoursePayment
+          ? (courseSubject?.price ?? p.amount ?? 0)
+          : (cls ? (cls.price ?? 0) : (p.amount ?? 0));
         return {
           ...p,
-          resolvedAmount: amountVal,
-          subjectName: cls?.subject?.name || 'Sin materia',
-          classTitle: cls?.title || 'Clase',
+          isCoursePayment,
+          resolvedAmount: Number(amountVal || 0),
+          subjectName: isCoursePayment
+            ? (courseSubject?.name || 'Curso')
+            : (cls?.subject?.name || 'Sin materia'),
+          classTitle: isCoursePayment
+            ? `Curso: ${courseSubject?.name || code}`
+            : (cls?.title || 'Clase'),
           paymentDateObj: new Date(p.date || p.createdAt),
         };
       })
       .sort((a, b) => b.paymentDateObj - a.paymentDateObj);
-  }, [payments, classesByCode]);
+  }, [payments, classesByCode, subjectsById]);
 
   // Handle Preset Ranges
   useEffect(() => {
@@ -166,9 +195,29 @@ const AdminStatsPage = () => {
     setEndDateStr(end.toISOString().slice(0, 10));
   }, [presetRange]);
 
-  // Filtered Payments based on Dates
+  // Filtered Payments based on Dates & Payment Type
   const filteredPayments = useMemo(() => {
     return approvedPayments.filter((p) => {
+      if (paymentTypeFilter === 'class' && p.isCoursePayment) return false;
+      if (paymentTypeFilter === 'course' && !p.isCoursePayment) return false;
+      if (startDateStr) {
+        const start = new Date(startDateStr);
+        start.setHours(0, 0, 0, 0);
+        if (p.paymentDateObj < start) return false;
+      }
+      if (endDateStr) {
+        const end = new Date(endDateStr);
+        end.setHours(23, 59, 59, 999);
+        if (p.paymentDateObj > end) return false;
+      }
+      return true;
+    });
+  }, [approvedPayments, paymentTypeFilter, startDateStr, endDateStr]);
+
+  // Courses-only metrics (for Courses tab)
+  const coursePayments = useMemo(() => {
+    return approvedPayments.filter((p) => {
+      if (!p.isCoursePayment) return false;
       if (startDateStr) {
         const start = new Date(startDateStr);
         start.setHours(0, 0, 0, 0);
@@ -182,6 +231,48 @@ const AdminStatsPage = () => {
       return true;
     });
   }, [approvedPayments, startDateStr, endDateStr]);
+
+  const coursesTotalRevenue = useMemo(() => {
+    return coursePayments.reduce((sum, p) => sum + p.resolvedAmount, 0);
+  }, [coursePayments]);
+
+  const coursesBreakdown = useMemo(() => {
+    const map = {};
+    (subjects || [])
+      .filter((s) => s.isCourse)
+      .forEach((s) => {
+        const id = String(s.subjectId || '').toLowerCase();
+        map[id] = {
+          subjectId: id,
+          name: s.name,
+          price: Number(s.price || 0),
+          amount: 0,
+          count: 0,
+        };
+      });
+
+    coursePayments.forEach((p) => {
+      const id = String(p.classCode || '').trim().toLowerCase();
+      if (!map[id]) {
+        map[id] = {
+          subjectId: id,
+          name: p.subjectName || id,
+          price: p.resolvedAmount,
+          amount: 0,
+          count: 0,
+        };
+      }
+      map[id].amount += p.resolvedAmount;
+      map[id].count += 1;
+    });
+
+    return Object.values(map)
+      .map((item) => ({
+        ...item,
+        percentage: coursesTotalRevenue > 0 ? (item.amount / coursesTotalRevenue) * 100 : 0,
+      }))
+      .sort((a, b) => b.amount - a.amount);
+  }, [subjects, coursePayments, coursesTotalRevenue]);
 
   // METRIC TOTALS
   const totalRevenue = useMemo(() => {
@@ -281,14 +372,68 @@ const AdminStatsPage = () => {
       .slice(0, 5); // top 5
   }, [filteredPayments]);
 
+  // AVAILABLE ACTIVE MONTHS & SELECTED MONTHS FOR CHART
+  const availableChartMonths = useMemo(() => {
+    const monthsMap = new Map();
+    const shortMonths = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+
+    filteredPayments.forEach((p) => {
+      const d = p.paymentDateObj;
+      if (Number.isNaN(d.getTime())) return;
+      const year = d.getFullYear();
+      const month = d.getMonth();
+      const key = `${year}-${String(month + 1).padStart(2, '0')}`;
+      if (!monthsMap.has(key)) {
+        monthsMap.set(key, {
+          key,
+          label: `${shortMonths[month]} ${String(year).slice(2)}`,
+        });
+      }
+    });
+
+    return Array.from(monthsMap.values()).sort((a, b) => a.key.localeCompare(b.key));
+  }, [filteredPayments]);
+
+  const activeChartMonthKeys = useMemo(() => {
+    const allKeys = availableChartMonths.map((m) => m.key);
+    if (chartMonthMode === 'all') return allKeys;
+    if (chartMonthMode === 'custom') {
+      const validSet = new Set(allKeys);
+      return customChartMonths.filter((k) => validSet.has(k));
+    }
+    return allKeys.slice(-8);
+  }, [availableChartMonths, chartMonthMode, customChartMonths]);
+
+  const chartPayments = useMemo(() => {
+    const activeSet = new Set(activeChartMonthKeys);
+    if (activeSet.size === 0) return [];
+    return filteredPayments.filter((p) => {
+      const d = p.paymentDateObj;
+      if (Number.isNaN(d.getTime())) return false;
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      return activeSet.has(key);
+    });
+  }, [filteredPayments, activeChartMonthKeys]);
+
+  const handleToggleChartMonth = (monthKey) => {
+    const baseKeys = chartMonthMode === 'custom' ? customChartMonths : activeChartMonthKeys;
+    const exists = baseKeys.includes(monthKey);
+    const nextKeys = exists
+      ? baseKeys.filter((k) => k !== monthKey)
+      : [...baseKeys, monthKey].sort((a, b) => a.localeCompare(b));
+    setChartMonthMode('custom');
+    setCustomChartMonths(nextKeys);
+    setHoveredDataPoint(null);
+  };
+
   // TRENDS GROUPING & COORDINATES FOR SVG CHART
   const chartData = useMemo(() => {
-    if (filteredPayments.length === 0) return [];
+    if (chartPayments.length === 0) return [];
 
     const grouped = {};
 
     // Grouping
-    filteredPayments.forEach((p) => {
+    chartPayments.forEach((p) => {
       let key = '';
       if (granularity === 'daily') {
         key = p.paymentDateObj.toISOString().slice(0, 10);
@@ -360,7 +505,7 @@ const AdminStatsPage = () => {
     }
 
     return sortedKeys.map((k) => grouped[k]);
-  }, [filteredPayments, granularity]);
+  }, [chartPayments, granularity]);
 
   const svgParams = useMemo(() => {
     if (chartData.length === 0) return null;
@@ -544,58 +689,234 @@ const AdminStatsPage = () => {
           </div>
         )}
 
+        {/* Navigation Tabs */}
+        <section className="flex items-center gap-2 bg-white rounded-2xl border border-gray-100 p-1.5 w-fit shadow-sm">
+          {[
+            { id: 'general', label: 'Resumen general' },
+            { id: 'courses', label: 'Cursos' },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`px-5 py-2 rounded-xl text-xs sm:text-sm font-black transition-all ${
+                activeTab === tab.id
+                  ? 'bg-slate-900 text-white shadow-sm'
+                  : 'text-gray-500 hover:text-gray-900'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </section>
+
         {/* Global Date Presets & Date Picker Controls */}
-        <section className="bg-white rounded-3xl border border-gray-100 p-4 sm:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm">
-          <div className="flex flex-wrap items-center gap-2">
-            <Filter size={16} className="text-gray-400 mr-1 hidden sm:inline" />
-            {[
-              { id: 'all', label: 'Todo el historial' },
-              { id: '30days', label: 'Últimos 30 días' },
-              { id: '90days', label: 'Últimos 90 días' },
-              { id: 'year', label: 'Último año' },
-            ].map((preset) => (
-              <button
-                key={preset.id}
-                onClick={() => setPresetRange(preset.id)}
-                className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${
-                  presetRange === preset.id
-                    ? 'bg-slate-900 text-white shadow-md'
-                    : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
-                }`}
-                type="button"
-              >
-                {preset.label}
-              </button>
-            ))}
+        <section className="bg-white rounded-3xl border border-gray-100 p-4 sm:p-6 flex flex-col gap-4 shadow-sm">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <Filter size={16} className="text-gray-400 mr-1 hidden sm:inline" />
+              {[
+                { id: 'all', label: 'Todo el historial' },
+                { id: '30days', label: 'Últimos 30 días' },
+                { id: '90days', label: 'Últimos 90 días' },
+                { id: 'year', label: 'Último año' },
+              ].map((preset) => (
+                <button
+                  key={preset.id}
+                  onClick={() => setPresetRange(preset.id)}
+                  className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${
+                    presetRange === preset.id
+                      ? 'bg-slate-900 text-white shadow-md'
+                      : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                  }`}
+                  type="button"
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-100 px-3 py-1.5 rounded-xl">
+                <span className="text-[10px] font-black text-gray-400 uppercase tracking-wider">Desde</span>
+                <input
+                  type="date"
+                  value={startDateStr}
+                  onChange={(event) => {
+                    setStartDateStr(event.target.value);
+                    setPresetRange('');
+                  }}
+                  className="bg-transparent text-xs font-bold text-gray-800 outline-none w-28"
+                />
+              </div>
+              <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-100 px-3 py-1.5 rounded-xl">
+                <span className="text-[10px] font-black text-gray-400 uppercase tracking-wider">Hasta</span>
+                <input
+                  type="date"
+                  value={endDateStr}
+                  onChange={(event) => {
+                    setEndDateStr(event.target.value);
+                    setPresetRange('');
+                  }}
+                  className="bg-transparent text-xs font-bold text-gray-800 outline-none w-28"
+                />
+              </div>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-100 px-3 py-1.5 rounded-xl">
-              <span className="text-[10px] font-black text-gray-400 uppercase tracking-wider">Desde</span>
-              <input
-                type="date"
-                value={startDateStr}
-                onChange={(event) => {
-                  setStartDateStr(event.target.value);
-                  setPresetRange('');
-                }}
-                className="bg-transparent text-xs font-bold text-gray-800 outline-none w-28"
-              />
+          {activeTab === 'general' && (
+            <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-gray-100">
+              <span className="text-[10px] font-black text-gray-400 uppercase tracking-wider mr-1">
+                Tipo de ingreso:
+              </span>
+              {[
+                { id: 'all', label: 'Todos (Clases y Cursos)' },
+                { id: 'class', label: 'Clases individuales' },
+                { id: 'course', label: 'Cursos' },
+              ].map((typeOpt) => (
+                <button
+                  key={typeOpt.id}
+                  type="button"
+                  onClick={() => setPaymentTypeFilter(typeOpt.id)}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition-all ${
+                    paymentTypeFilter === typeOpt.id
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  {typeOpt.label}
+                </button>
+              ))}
             </div>
-            <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-100 px-3 py-1.5 rounded-xl">
-              <span className="text-[10px] font-black text-gray-400 uppercase tracking-wider">Hasta</span>
-              <input
-                type="date"
-                value={endDateStr}
-                onChange={(event) => {
-                  setEndDateStr(event.target.value);
-                  setPresetRange('');
-                }}
-                className="bg-transparent text-xs font-bold text-gray-800 outline-none w-28"
-              />
-            </div>
-          </div>
+          )}
         </section>
+
+        {activeTab === 'courses' ? (
+          <>
+            <section className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-6">
+              <div className="bg-white rounded-3xl p-4 sm:p-6 border border-gray-100 shadow-sm flex items-start gap-3 sm:gap-4 relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-2.5 h-full bg-purple-500" />
+                <div className="w-10 h-10 sm:w-12 sm:h-12 bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center shrink-0">
+                  <DollarSign size={20} className="sm:w-6 sm:h-6" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-wider">Recaudado en Cursos</p>
+                  <h4 className="text-sm sm:text-xl font-extrabold text-gray-900 mt-1 truncate">
+                    {formatCurrency(coursesTotalRevenue)}
+                  </h4>
+                  <p className="text-[10px] font-semibold text-gray-500 mt-0.5">Ingresos netos de cursos</p>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-3xl p-4 sm:p-6 border border-gray-100 shadow-sm flex items-start gap-3 sm:gap-4 relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-2.5 h-full bg-indigo-500" />
+                <div className="w-10 h-10 sm:w-12 sm:h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center shrink-0">
+                  <CreditCard size={20} className="sm:w-6 sm:h-6" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-wider">Inscripciones Pagadas</p>
+                  <h4 className="text-sm sm:text-xl font-extrabold text-gray-900 mt-1 truncate">
+                    {coursePayments.length} Pagos
+                  </h4>
+                  <p className="text-[10px] font-semibold text-gray-500 mt-0.5">Comprobantes aprobados</p>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-3xl p-4 sm:p-6 border border-gray-100 shadow-sm flex items-start gap-3 sm:gap-4 relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-2.5 h-full bg-emerald-500" />
+                <div className="w-10 h-10 sm:w-12 sm:h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center shrink-0">
+                  <BookOpen size={20} className="sm:w-6 sm:h-6" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-wider">Cursos Registrados</p>
+                  <h4 className="text-sm sm:text-xl font-extrabold text-gray-900 mt-1 truncate">
+                    {coursesBreakdown.length} Cursos
+                  </h4>
+                  <p className="text-[10px] font-semibold text-gray-500 mt-0.5">Activos en plataforma</p>
+                </div>
+              </div>
+            </section>
+
+            <section className="grid lg:grid-cols-12 gap-6">
+              <div className="lg:col-span-5 bg-white rounded-[2rem] border border-gray-100 p-4 sm:p-6 shadow-sm">
+                <h3 className="text-base sm:text-lg font-extrabold text-gray-900">Ingresos por curso</h3>
+                <p className="text-xs text-gray-500 font-semibold mt-0.5 mb-5">
+                  Desglose de recaudación por cada curso
+                </p>
+
+                {coursesBreakdown.length === 0 ? (
+                  <div className="rounded-2xl bg-gray-50 border border-gray-100 p-6 text-center text-xs sm:text-sm font-semibold text-gray-500">
+                    No hay cursos registrados.
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {coursesBreakdown.map((course) => (
+                      <div key={course.subjectId} className="space-y-1.5">
+                        <div className="flex justify-between text-xs sm:text-sm font-bold text-gray-900 gap-2">
+                          <span className="truncate">
+                            {course.name}{' '}
+                            <span className="text-[10px] uppercase text-gray-400 font-black">
+                              ({course.subjectId})
+                            </span>
+                          </span>
+                          <span className="shrink-0">{formatCurrency(course.amount)}</span>
+                        </div>
+                        <div className="w-full bg-gray-100 h-2.5 rounded-full overflow-hidden">
+                          <div
+                            className="bg-purple-600 h-full rounded-full transition-all duration-700"
+                            style={{ width: `${course.percentage}%` }}
+                          />
+                        </div>
+                        <div className="flex justify-between text-[10px] text-gray-500 font-bold">
+                          <span>{course.count} inscripción(es) · Precio: {formatCurrency(course.price)}</span>
+                          <span className="text-purple-600 font-black">{course.percentage.toFixed(1)}%</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="lg:col-span-7 bg-white rounded-[2rem] border border-gray-100 p-4 sm:p-6 shadow-sm">
+                <h3 className="text-base sm:text-lg font-extrabold text-gray-900">Pagos de cursos aprobados</h3>
+                <p className="text-xs text-gray-500 font-semibold mt-0.5 mb-5">
+                  Detalle de estudiantes inscritos mediante pago de curso
+                </p>
+
+                {coursePayments.length === 0 ? (
+                  <div className="rounded-2xl bg-gray-50 border border-gray-100 p-6 text-center text-xs sm:text-sm font-semibold text-gray-500">
+                    No hay pagos de cursos aprobados en este periodo.
+                  </div>
+                ) : (
+                  <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
+                    {coursePayments.map((p) => (
+                      <div
+                        key={p.paymentId}
+                        className="rounded-2xl bg-gray-50 border border-gray-100 p-3.5 flex items-center justify-between gap-3"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-xs sm:text-sm font-black text-gray-900 truncate">
+                            {p.classTitle}
+                          </p>
+                          <p className="text-[11px] font-semibold text-gray-500 truncate">
+                            {getStudentName(p.studentEmail)} · {p.studentEmail}
+                          </p>
+                          <p className="text-[10px] font-bold text-gray-400 mt-0.5">
+                            Código: {p.classCode} · {formatDateTime(p.date || p.createdAt)}
+                          </p>
+                        </div>
+                        <span className="text-sm font-black text-purple-600 shrink-0">
+                          {formatCurrency(p.resolvedAmount)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </section>
+          </>
+        ) : (
+          <>
 
         {/* METRICS CARDS */}
         <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
@@ -633,9 +954,15 @@ const AdminStatsPage = () => {
               <BookOpen size={20} className="sm:w-6 sm:h-6" />
             </div>
             <div className="min-w-0">
-              <p className="text-[10px] font-black text-gray-400 uppercase tracking-wider">Clases Pagadas</p>
+              <p className="text-[10px] font-black text-gray-400 uppercase tracking-wider">
+                {paymentTypeFilter === 'course'
+                  ? 'Cursos Pagados'
+                  : paymentTypeFilter === 'class'
+                  ? 'Clases Pagadas'
+                  : 'Clases y Cursos'}
+              </p>
               <h4 className="text-sm sm:text-xl font-extrabold text-gray-900 mt-1 truncate">
-                {uniqueClassesPaidCount} Clases
+                {uniqueClassesPaidCount} {paymentTypeFilter === 'course' ? 'Cursos' : paymentTypeFilter === 'class' ? 'Clases' : 'Ítems'}
               </h4>
               <p className="text-[10px] font-semibold text-gray-500 mt-0.5">Mínimo un pago aprobado</p>
             </div>
@@ -661,36 +988,123 @@ const AdminStatsPage = () => {
           
           {/* Trends Dynamic SVG Chart */}
           <div className="lg:col-span-8 bg-white rounded-[2rem] border border-gray-100 p-4 sm:p-6 shadow-sm flex flex-col min-w-0">
-            <div className="flex items-center justify-between gap-3 mb-4 sm:mb-6">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4 sm:mb-5">
               <div>
                 <h3 className="text-base sm:text-lg font-extrabold text-gray-900">Tendencia de ingresos</h3>
-                <p className="text-xs text-gray-500 font-semibold mt-0.5">Representación de fondos percibidos en el tiempo</p>
+                <p className="text-xs text-gray-500 font-semibold mt-0.5">
+                  Representación de fondos percibidos en el tiempo
+                  {availableChartMonths.length > 0 && (
+                    <span className="ml-1 text-indigo-600 font-bold">
+                      · {chartMonthMode === 'last8'
+                        ? `Últimos ${activeChartMonthKeys.length} meses activos`
+                        : chartMonthMode === 'all'
+                        ? `Todos (${activeChartMonthKeys.length} meses)`
+                        : `${activeChartMonthKeys.length} mes(es) seleccionado(s)`}
+                    </span>
+                  )}
+                </p>
               </div>
 
-              {/* Granularity Toggle */}
-              <div className="flex items-center bg-gray-50 border border-gray-100 p-1 rounded-xl shrink-0">
-                {[
-                  { id: 'daily', label: 'Día' },
-                  { id: 'monthly', label: 'Mes' },
-                ].map((g) => (
+              <div className="flex items-center gap-2 shrink-0">
+                {availableChartMonths.length > 0 && (
                   <button
-                    key={g.id}
-                    onClick={() => {
-                      setGranularity(g.id);
-                      setHoveredDataPoint(null);
-                    }}
-                    className={`px-3 py-1 rounded-lg text-[10px] sm:text-xs font-black transition-all ${
-                      granularity === g.id
-                        ? 'bg-slate-900 text-white shadow-sm'
-                        : 'text-gray-500 hover:text-gray-900'
-                    }`}
                     type="button"
+                    onClick={() => setShowMonthSelector((prev) => !prev)}
+                    className={`px-3 py-1.5 rounded-xl text-[10px] sm:text-xs font-black border transition-all flex items-center gap-1.5 ${
+                      showMonthSelector
+                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                        : 'bg-gray-50 text-gray-700 border-gray-100 hover:bg-gray-100'
+                    }`}
                   >
-                    {g.label}
+                    <Calendar size={13} />
+                    Meses ({activeChartMonthKeys.length})
                   </button>
-                ))}
+                )}
+
+                {/* Granularity Toggle */}
+                <div className="flex items-center bg-gray-50 border border-gray-100 p-1 rounded-xl shrink-0">
+                  {[
+                    { id: 'daily', label: 'Día' },
+                    { id: 'monthly', label: 'Mes' },
+                  ].map((g) => (
+                    <button
+                      key={g.id}
+                      onClick={() => {
+                        setGranularity(g.id);
+                        setHoveredDataPoint(null);
+                      }}
+                      className={`px-3 py-1 rounded-lg text-[10px] sm:text-xs font-black transition-all ${
+                        granularity === g.id
+                          ? 'bg-slate-900 text-white shadow-sm'
+                          : 'text-gray-500 hover:text-gray-900'
+                      }`}
+                      type="button"
+                    >
+                      {g.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
+
+            {showMonthSelector && availableChartMonths.length > 0 && (
+              <div className="mb-4 p-3 rounded-2xl bg-gray-50 border border-gray-100 space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-[10px] font-black text-gray-400 uppercase tracking-wider">
+                    Selecciona los meses del gráfico
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setChartMonthMode('last8');
+                        setHoveredDataPoint(null);
+                      }}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-black transition-all ${
+                        chartMonthMode === 'last8'
+                          ? 'bg-slate-900 text-white'
+                          : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-100'
+                      }`}
+                    >
+                      Últimos 8
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setChartMonthMode('all');
+                        setHoveredDataPoint(null);
+                      }}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-black transition-all ${
+                        chartMonthMode === 'all'
+                          ? 'bg-slate-900 text-white'
+                          : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-100'
+                      }`}
+                    >
+                      Todos
+                    </button>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto pr-1">
+                  {availableChartMonths.map((m) => {
+                    const isSelected = activeChartMonthKeys.includes(m.key);
+                    return (
+                      <button
+                        key={m.key}
+                        type="button"
+                        onClick={() => handleToggleChartMonth(m.key)}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all ${
+                          isSelected
+                            ? 'bg-indigo-600 text-white shadow-sm'
+                            : 'bg-white text-gray-500 border border-gray-200 hover:bg-gray-100'
+                        }`}
+                      >
+                        {m.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* SVG Chart Drawing */}
             <div className="flex-1 min-h-[220px] relative flex flex-col justify-center">
@@ -1130,6 +1544,8 @@ const AdminStatsPage = () => {
 
           </div>
         </section>
+          </>
+        )}
       </main>
       
       <footer className="py-4 sm:py-6 text-center text-gray-400 text-xs sm:text-sm border-t border-gray-100 bg-white/60 mt-auto">

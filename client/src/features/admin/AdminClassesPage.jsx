@@ -277,7 +277,7 @@ const AdminClassesPage = () => {
     () =>
       (subjects || []).map((subject) => ({
         value: subject.subjectId,
-        label: `${subject.name} (${subject.subjectId})`,
+        label: `${subject.name} (${subject.subjectId})${subject.isCourse ? ' • Curso' : ''}`,
       })),
     [subjects]
   );
@@ -821,6 +821,11 @@ const AdminClassesPage = () => {
                     placeholder={subjects.length === 0 ? 'No hay materias' : 'Selecciona una materia'}
                     disabled={subjects.length === 0}
                   />
+                  {selectedSubject?.isCourse && (
+                    <p className="text-xs font-semibold text-purple-700 bg-purple-50 border border-purple-100 rounded-xl px-3 py-2">
+                      Esta materia es un Curso: los estudiantes inscritos en este curso tendrán acceso automático a la clase, y otros estudiantes aún podrán pagarla individualmente.
+                    </p>
+                  )}
                 </div>
 
                 <div className="md:col-span-2 space-y-2">

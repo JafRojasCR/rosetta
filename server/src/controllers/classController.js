@@ -1,5 +1,7 @@
 const Class = require('../models/Class');
 const Payment = require('../models/Payment');
+const Student = require('../models/Student');
+const Subject = require('../models/Subject');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const path = require('path');
@@ -65,6 +67,22 @@ const isClassUnlockedForUser = (cls, userEmail) => {
       entry?.student?.email?.toLowerCase() === normalizedEmail &&
       entry?.unlocked === true
   );
+};
+
+const isClassUnlockedForStudent = async (cls, userEmail) => {
+  if (!cls || !userEmail) return false;
+  if (isClassUnlockedForUser(cls, userEmail)) return true;
+
+  const subjectId = String(cls?.subject?.subjectId || '').trim().toLowerCase();
+  if (!subjectId) return false;
+
+  const [student, courseSubject] = await Promise.all([
+    Student.findOne({ email: String(userEmail).toLowerCase() }).select('cursos').lean(),
+    Subject.findOne({ subjectId, isCourse: true }).select('_id').lean(),
+  ]);
+
+  if (!courseSubject || !student || !Array.isArray(student.cursos)) return false;
+  return student.cursos.some((c) => String(c || '').trim().toLowerCase() === subjectId);
 };
 
 const getRequestIp = (req = {}) => {
@@ -400,7 +418,7 @@ const resolveEmbedContext = async (token, req) => {
   if (!cls) return { denied: true, code: 404, message: 'Clase no encontrada.' };
 
   const isAdmin = decoded.role === 'admin';
-  const canAccess = isAdmin || isClassUnlockedForUser(cls, decoded.email);
+  const canAccess = isAdmin || (await isClassUnlockedForStudent(cls, decoded.email));
   if (!canAccess) return { denied: true, code: 403, message: 'Clase bloqueada.' };
 
   return { denied: false, decoded, cls };
@@ -516,7 +534,7 @@ const getClassByCode = async (req, res) => {
     const cls = await Class.findOne({ classCode: req.params.classCode });
     if (!cls) return error(res, 'Clase no encontrada.', 404);
 
-    // Si hay un usuario autenticado, verificar si pagó
+    // Si hay un usuario autenticado, verificar si pagó o tiene acceso por curso
     let hasPaid = false;
     if (req.user) {
       const payment = await Payment.findOne({
@@ -524,7 +542,7 @@ const getClassByCode = async (req, res) => {
         classCode: cls.classCode,
         status: 'aprobado',
       });
-      hasPaid = !!payment;
+      hasPaid = !!payment || (await isClassUnlockedForStudent(cls, req.user.email));
     }
 
     const classData = cls.toObject();
@@ -1009,7 +1027,7 @@ const getClassEmbedToken = async (req, res) => {
     if (!cls) return error(res, 'Clase no encontrada.', 404);
 
     const isAdmin = req.user?.role === 'admin';
-    const canAccess = isAdmin || isClassUnlockedForUser(cls, req.user?.email);
+    const canAccess = isAdmin || (await isClassUnlockedForStudent(cls, req.user?.email));
 
     if (!canAccess) {
       return error(res, 'Clase bloqueada para este estudiante.', 403);
@@ -1139,7 +1157,7 @@ const getClassRecordingAccessUrl = async (req, res) => {
     if (!cls) return error(res, 'Clase no encontrada.', 404);
 
     const isAdmin = req.user?.role === 'admin';
-    const canAccess = isAdmin || cls.isPublic || isClassUnlockedForUser(cls, req.user?.email);
+    const canAccess = isAdmin || cls.isPublic || (await isClassUnlockedForStudent(cls, req.user?.email));
     if (!canAccess) {
       return error(res, 'Clase bloqueada para este estudiante.', 403);
     }
@@ -1174,7 +1192,7 @@ const getClassCanvaAccessUrl = async (req, res) => {
     if (!cls) return error(res, 'Clase no encontrada.', 404);
 
     const isAdmin = req.user?.role === 'admin';
-    const canAccess = isAdmin || cls.isPublic || isClassUnlockedForUser(cls, req.user?.email);
+    const canAccess = isAdmin || cls.isPublic || (await isClassUnlockedForStudent(cls, req.user?.email));
     if (!canAccess) {
       return error(res, 'Clase bloqueada para este estudiante.', 403);
     }

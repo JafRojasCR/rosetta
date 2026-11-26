@@ -204,6 +204,18 @@ const AdminUsersPage = () => {
                       <Phone size={14} className="text-indigo-500 flex-shrink-0" />
                       <span className="truncate">{student.phone || 'Sin telefono'}</span>
                     </div>
+                    {Array.isArray(student.cursos) && student.cursos.length > 0 && (
+                      <div className="pt-1 flex flex-wrap gap-1.5">
+                        {student.cursos.map((courseId) => (
+                          <span
+                            key={`${student.email}-${courseId}`}
+                            className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-purple-50 text-purple-700 border border-purple-100"
+                          >
+                            Curso: {courseId}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </article>
               );

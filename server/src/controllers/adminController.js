@@ -136,12 +136,17 @@ const updateStudent = async (req, res) => {
     name: Joi.string().optional(),
     lastName: Joi.string().optional(),
     phone: Joi.string().allow('').optional(),
+    cursos: Joi.array().items(Joi.string().trim().lowercase()).optional(),
   });
 
   const { error: validationError, value } = schema.validate(req.body);
   if (validationError) return error(res, validationError.details[0].message, 400);
 
   try {
+    if (Array.isArray(value.cursos)) {
+      value.cursos = [...new Set(value.cursos.map((c) => String(c || '').trim().toLowerCase()).filter(Boolean))];
+    }
+
     const student = await Student.findOneAndUpdate(
       { email: req.params.email },
       value,

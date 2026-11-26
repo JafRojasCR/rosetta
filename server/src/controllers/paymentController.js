@@ -1,5 +1,6 @@
 const Payment = require('../models/Payment');
 const Class = require('../models/Class');
+const Subject = require('../models/Subject');
 const Student = require('../models/Student');
 const Admin = require('../models/Admin');
 const fs = require('fs/promises');
@@ -153,6 +154,18 @@ const ensureStudentClassAccess = async ({ payment, cls, student, accessGrantedAt
   await cls.save();
 };
 
+const ensureStudentCourseAccess = async ({ student, subjectId }) => {
+  if (!student || !subjectId) return;
+
+  const normalizedCourseId = String(subjectId || '').trim().toLowerCase();
+  if (!normalizedCourseId) return;
+
+  await Student.updateOne(
+    { _id: student._id },
+    { $addToSet: { cursos: normalizedCourseId } }
+  );
+};
+
 // GET /api/payments (student: own payments)
 const getMyPayments = async (req, res) => {
   try {
@@ -227,6 +240,7 @@ const getPaymentBillAccessUrl = async (req, res) => {
 const createPayment = async (req, res) => {
   const schema = Joi.object({
     classCode: Joi.string().required(),
+    paymentType: Joi.string().valid('class', 'course').default('class'),
   });
 
   const { error: validationError, value } = schema.validate(req.body);
@@ -235,27 +249,43 @@ const createPayment = async (req, res) => {
   let uploadedBillObjectKey = '';
 
   try {
-    const cls = await Class.findOne({ classCode: value.classCode });
-    if (!cls) return error(res, 'Clase no encontrada.', 404);
+    const isCoursePayment = value.paymentType === 'course';
+    let cls = null;
+    let courseSubject = null;
+
+    if (isCoursePayment) {
+      courseSubject = await Subject.findOne({
+        subjectId: String(value.classCode || '').trim().toLowerCase(),
+        isCourse: true,
+      });
+      if (!courseSubject) return error(res, 'Curso no encontrado.', 404);
+    } else {
+      cls = await Class.findOne({ classCode: value.classCode });
+      if (!cls) return error(res, 'Clase no encontrada.', 404);
+    }
 
     if (!req.file) {
       return error(res, 'Debes adjuntar el comprobante para validar el pago.', 400);
     }
 
+    const targetCode = isCoursePayment ? courseSubject.subjectId : cls.classCode;
+    const expectedPrice = isCoursePayment ? Number(courseSubject.price || 0) : Number(cls.price || 0);
+
     const existingUnresolvedForClass = await Payment.findOne({
       studentEmail: req.user.email,
-      classCode: value.classCode,
+      classCode: targetCode,
       status: { $in: ['pendiente', 'rechazado'] },
     });
 
     if (existingUnresolvedForClass) {
       await removeTempFile(req.file.path);
       const unresolvedStatus = existingUnresolvedForClass.status;
+      const targetLabel = isCoursePayment ? 'este curso' : 'esta clase';
       return error(
         res,
         unresolvedStatus === 'rechazado'
-          ? 'Ya tienes un pago rechazado para esta clase. Elimínalo primero para subir otro comprobante.'
-          : 'Ya tienes un pago pendiente para esta clase. Elimínalo primero para subir otro comprobante.',
+          ? `Ya tienes un pago rechazado para ${targetLabel}. Elimínalo primero para subir otro comprobante.`
+          : `Ya tienes un pago pendiente para ${targetLabel}. Elimínalo primero para subir otro comprobante.`,
         409,
         {
           paymentId: existingUnresolvedForClass.paymentId,
@@ -266,7 +296,7 @@ const createPayment = async (req, res) => {
 
     let extractedData;
     try {
-      extractedData = await extractPaymentData(req.file.path, cls.price);
+      extractedData = await extractPaymentData(req.file.path, expectedPrice);
       if (!String(extractedData?.rawText || '').trim()) {
         throw new Error('OCR local sin texto extraído.');
       }
@@ -278,7 +308,7 @@ const createPayment = async (req, res) => {
           mimeType: req.file.mimetype,
           fileName: req.file.originalname || req.file.filename,
           source: `local:${req.file.filename || ''}`,
-          expectedAmount: cls.price,
+          expectedAmount: expectedPrice,
         });
       } catch (fallbackError) {
         await removeTempFile(req.file.path);
@@ -292,8 +322,8 @@ const createPayment = async (req, res) => {
 
     const validation = validateExtractedPayment({
       extractedData,
-      classCode: cls.classCode,
-      classPrice: cls.price,
+      classCode: targetCode,
+      classPrice: expectedPrice,
     });
 
     if (!validation.checks.hasBillNumber) {
@@ -303,32 +333,45 @@ const createPayment = async (req, res) => {
         'No se detectó número de comprobante/documento. Sube una imagen más clara del recibo.',
         400,
         {
-          checks: validation.checks,
-          validationErrors: validation.errors,
+          checks: isCoursePayment
+            ? {
+                hasBillNumber: validation.checks.hasBillNumber,
+                detailMatches: validation.checks.detailMatches,
+              }
+            : validation.checks,
+          validationErrors: isCoursePayment
+            ? ['No se detectó número de comprobante/documento en la imagen.']
+            : validation.errors,
         }
       );
     }
 
     const billNumber = String(extractedData.billNumber || '').trim();
 
-    /* Verificar comprobante no reutilizado, temporalmente deshabilitado para evitar falsos positivos en la extracción de número de comprobante
-    const isValid = await validatePayment(billNumber);
-    if (!isValid) {
-      await removeTempFile(req.file.path);
-      return error(res, 'Este comprobante ya fue utilizado.', 409, {
-        checks: validation.checks,
-      });
+    if (isCoursePayment) {
+      const isValid = await validatePayment(billNumber);
+      if (!isValid) {
+        await removeTempFile(req.file.path);
+        return error(res, 'Este comprobante ya fue utilizado.', 409, {
+          checks: {
+            hasBillNumber: validation.checks.hasBillNumber,
+            detailMatches: validation.checks.detailMatches,
+          },
+        });
+      }
     }
-*/
-    const failedCoreCriteria = [
-      validation.checks.amountMatches ? null : 'monto',
-      validation.checks.recipientMatches ? null : 'destinatario',
-      validation.checks.detailMatches ? null : 'detalle',
-    ].filter(Boolean);
+
+    const failedCoreCriteria = isCoursePayment
+      ? [validation.checks.detailMatches ? null : 'detalle'].filter(Boolean)
+      : [
+          validation.checks.amountMatches ? null : 'monto',
+          validation.checks.recipientMatches ? null : 'destinatario',
+          validation.checks.detailMatches ? null : 'detalle',
+        ].filter(Boolean);
 
     const coreFailuresCount = failedCoreCriteria.length;
 
-    if (coreFailuresCount >= 2) {
+    if (!isCoursePayment && coreFailuresCount >= 2) {
       await removeTempFile(req.file.path);
       return error(
         res,
@@ -341,6 +384,22 @@ const createPayment = async (req, res) => {
         }
       );
     }
+
+    const effectiveChecks = isCoursePayment
+      ? {
+          hasBillNumber: validation.checks.hasBillNumber,
+          hasDate: true,
+          amountMatches: true,
+          detailMatches: validation.checks.detailMatches,
+          recipientMatches: true,
+        }
+      : validation.checks;
+
+    const effectiveValidationErrors = isCoursePayment
+      ? validation.checks.detailMatches
+        ? []
+        : ['El detalle del pago no coincide con el código del curso.']
+      : validation.errors;
 
     const paymentId = `PAY-${Date.now()}`;
     const billObjectKey = generateObjectKey({
@@ -355,7 +414,7 @@ const createPayment = async (req, res) => {
     uploadedBillObjectKey = billObjectKey;
 
     const billUrl = buildPaymentBillAccessApiUrl(paymentId);
-    const paymentStatus = coreFailuresCount === 1 ? 'pendiente' : 'aprobado';
+    const paymentStatus = coreFailuresCount >= 1 ? 'pendiente' : 'aprobado';
     const resolvedAmount = Number.isFinite(validation.resolvedAmount)
       ? validation.resolvedAmount
       : extractedData.amount;
@@ -367,12 +426,13 @@ const createPayment = async (req, res) => {
       billStorageProvider: 'gcs',
       billStorageObjectKey: billObjectKey,
       studentEmail: req.user.email,
-      classCode: value.classCode,
+      classCode: targetCode,
+      paymentType: isCoursePayment ? 'course' : 'class',
       amount: Number.isFinite(resolvedAmount) ? resolvedAmount : null,
       recipient: extractedData.recipient || '',
       detail: extractedData.detail || '',
-      validationChecks: validation.checks,
-      validationErrors: validation.errors,
+      validationChecks: effectiveChecks,
+      validationErrors: effectiveValidationErrors,
       status: paymentStatus,
       approvedManually: false,
     });
@@ -381,12 +441,19 @@ const createPayment = async (req, res) => {
 
     if (payment.status === 'aprobado') {
       const student = await Student.findOne({ email: payment.studentEmail });
-      await ensureStudentClassAccess({
-        payment,
-        cls,
-        student,
-        accessGrantedAt: new Date(),
-      });
+      if (isCoursePayment) {
+        await ensureStudentCourseAccess({
+          student,
+          subjectId: courseSubject.subjectId,
+        });
+      } else {
+        await ensureStudentClassAccess({
+          payment,
+          cls,
+          student,
+          accessGrantedAt: new Date(),
+        });
+      }
       await notifyAdminsPaymentStatus(payment);
       await notifyStudentPaymentDecision(payment);
     } else if (payment.status === 'pendiente') {
@@ -397,7 +464,12 @@ const createPayment = async (req, res) => {
       res,
       {
         payment,
-        checks: validation.checks,
+        checks: isCoursePayment
+          ? {
+              hasBillNumber: validation.checks.hasBillNumber,
+              detailMatches: validation.checks.detailMatches,
+            }
+          : validation.checks,
         failedCoreCriteria,
       },
       payment.status === 'aprobado'
@@ -494,17 +566,28 @@ const updatePaymentStatus = async (req, res) => {
     await payment.save();
 
     if (status === 'aprobado') {
-      const [cls, student] = await Promise.all([
+      const [cls, student, courseSubject] = await Promise.all([
         Class.findOne({ classCode: payment.classCode }),
         Student.findOne({ email: payment.studentEmail }),
+        Subject.findOne({
+          subjectId: String(payment.classCode || '').trim().toLowerCase(),
+          isCourse: true,
+        }),
       ]);
 
-      await ensureStudentClassAccess({
-        payment,
-        cls,
-        student,
-        accessGrantedAt: new Date(),
-      });
+      if (payment.paymentType === 'course' || (!cls && courseSubject)) {
+        await ensureStudentCourseAccess({
+          student,
+          subjectId: courseSubject?.subjectId || payment.classCode,
+        });
+      } else {
+        await ensureStudentClassAccess({
+          payment,
+          cls,
+          student,
+          accessGrantedAt: new Date(),
+        });
+      }
       await notifyAdminsPaymentStatus(payment);
       await notifyStudentPaymentDecision(payment);
     } else if (status === 'pendiente') {

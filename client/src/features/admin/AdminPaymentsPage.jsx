@@ -50,6 +50,7 @@ const AdminPaymentsPage = () => {
   const [expandedRegisteredId, setExpandedRegisteredId] = useState('');
   const [payments, setPayments] = useState([]);
   const [classes, setClasses] = useState([]);
+  const [subjects, setSubjects] = useState([]);
   const [students, setStudents] = useState([]);
   const [sortBy, setSortBy] = useState('createdAt');
   const [sortOrder, setSortOrder] = useState('desc');
@@ -80,14 +81,16 @@ const AdminPaymentsPage = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [paymentsResponse, classesResponse, studentsResponse] = await Promise.all([
+        const [paymentsResponse, classesResponse, subjectsResponse, studentsResponse] = await Promise.all([
           api.get('/payments/all'),
           api.get('/classes'),
+          api.get('/subjects'),
           api.get('/admin/students'),
         ]);
 
         setPayments(paymentsResponse.data?.data || []);
         setClasses(classesResponse.data?.data || []);
+        setSubjects(subjectsResponse.data?.data || []);
         setStudents(studentsResponse.data?.data || []);
       } catch (_requestError) {
         setError('No se pudieron cargar los pagos para administración.');
@@ -170,6 +173,14 @@ const AdminPaymentsPage = () => {
       return accumulator;
     }, {});
   }, [classes]);
+
+  const subjectsById = useMemo(() => {
+    return (subjects || []).reduce((accumulator, subj) => {
+      const id = String(subj?.subjectId || '').trim().toLowerCase();
+      if (id) accumulator[id] = subj;
+      return accumulator;
+    }, {});
+  }, [subjects]);
 
   const studentsByEmail = useMemo(() => {
     return (students || []).reduce((accumulator, student) => {
@@ -376,16 +387,25 @@ const AdminPaymentsPage = () => {
               <div className="space-y-3 sm:space-y-4">
                 {pendingPayments.map((payment) => {
                   const cls = classesByCode[String(payment.classCode || '').trim()];
+                  const courseSubject = subjectsById[String(payment.classCode || '').trim().toLowerCase()];
+                  const isCoursePayment =
+                    payment.paymentType === 'course' || (!cls && Boolean(courseSubject?.isCourse));
                   const isExpanded = expandedPendingId === payment.paymentId;
                   const isApprovingAnimation = animatingApprovedIds.includes(payment.paymentId);
                   const isBusy = updatingId === payment.paymentId || isApprovingAnimation;
                   const isClassBubbleVisible = activeClassInfoId === payment.paymentId;
-                  const expectedClassCode = String(cls?.classCode || payment.classCode || '--');
+                  const expectedClassCode = String(
+                    isCoursePayment ? courseSubject?.subjectId || payment.classCode : cls?.classCode || payment.classCode || '--'
+                  );
                   const shortExpectedClassCode =
                     expectedClassCode.length > 14
                       ? `${expectedClassCode.slice(0, 12)}…`
                       : expectedClassCode;
-                  const expectedClassPrice = Number.isFinite(Number(cls?.price))
+                  const expectedClassPrice = isCoursePayment
+                    ? Number.isFinite(Number(courseSubject?.price))
+                      ? Number(courseSubject?.price)
+                      : '--'
+                    : Number.isFinite(Number(cls?.price))
                     ? Number(cls?.price)
                     : '--';
                   const checks = payment.validationChecks || {};
@@ -409,7 +429,9 @@ const AdminPaymentsPage = () => {
                         className="w-full px-3 sm:px-4 py-3 sm:py-4 bg-white hover:bg-gray-50 transition-colors flex items-center justify-between gap-2 sm:gap-3 text-left"
                       >
                         <div className="min-w-0">
-                          <p className="text-xs sm:text-sm font-black text-gray-900 truncate">{payment.classCode} · {cls?.title || 'Clase'}</p>
+                          <p className="text-xs sm:text-sm font-black text-gray-900 truncate">
+                            {payment.classCode} · {isCoursePayment ? `Curso: ${courseSubject?.name || payment.classCode}` : cls?.title || 'Clase'}
+                          </p>
                           <p className="text-xs font-semibold text-gray-500 truncate">{getStudentDisplayName(payment.studentEmail)}</p>
                         </div>
                         <ChevronDown size={18} className={`text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
@@ -436,9 +458,15 @@ const AdminPaymentsPage = () => {
                                 }
                                 className="w-full text-left"
                               >
-                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Clase</p>
-                                <p className="text-xs sm:text-sm font-bold text-gray-800 mt-1 truncate">{cls?.title || 'Sin título'}</p>
-                                <p className="text-xs text-gray-500 truncate">{getClassSubject(cls)}</p>
+                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                                  {isCoursePayment ? 'Curso' : 'Clase'}
+                                </p>
+                                <p className="text-xs sm:text-sm font-bold text-gray-800 mt-1 truncate">
+                                  {isCoursePayment ? courseSubject?.name || payment.classCode : cls?.title || 'Sin título'}
+                                </p>
+                                <p className="text-xs text-gray-500 truncate">
+                                  {isCoursePayment ? 'Curso completo' : getClassSubject(cls)}
+                                </p>
                               </button>
 
                               <div

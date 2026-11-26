@@ -53,6 +53,10 @@ const studentSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    cursos: {
+      type: [String],
+      default: [],
+    },
   },
   { timestamps: true }
 );

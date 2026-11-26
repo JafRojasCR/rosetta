@@ -65,7 +65,7 @@ const ClassDetailPage = () => {
 
         <div className="flex items-center gap-4 mb-6">
           <span className="text-xl font-bold text-green-600">
-            ₡{cls.price?.toLocaleString('es-CR')}
+            {cls.price?.toLocaleString('es-CR')}
           </span>
           {cls.hasPaid ? (
             <span className="bg-green-50 text-green-600 text-sm px-3 py-1 rounded-full font-medium">

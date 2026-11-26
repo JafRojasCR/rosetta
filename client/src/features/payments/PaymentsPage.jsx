@@ -51,6 +51,11 @@ const CHECK_LABELS = {
   recipientMatches: 'Destinatario correcto',
 };
 
+const COURSE_CHECK_LABELS = {
+  hasBillNumber: 'Comprobante/documento detectado (no reutilizado)',
+  detailMatches: 'Código de curso en detalle correcto',
+};
+
 const formatDate = (value) => {
   if (!value) return '--/--/----';
   const date = new Date(value);
@@ -75,28 +80,40 @@ const formatTime = (value) => {
 const PaymentsPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user } = useAuth();
+  const { user, role, checkSessionHealth } = useAuth();
 
   const [isVisible, setIsVisible] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [selectedClassCode, setSelectedClassCode] = useState('');
+  const [selectedCourseCode, setSelectedCourseCode] = useState('');
   const [uploadedFile, setUploadedFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState('');
   const [showTutorial, setShowTutorial] = useState(false);
-  const [tutorialAccepted, setTutorialAccepted] = useState(false);
   const [expandedPaymentId, setExpandedPaymentId] = useState('');
   const [classes, setClasses] = useState([]);
+  const [subjects, setSubjects] = useState([]);
   const [payments, setPayments] = useState([]);
   const [success, setSuccess] = useState('');
   const [warning, setWarning] = useState('');
   const [error, setError] = useState('');
   const [lastChecks, setLastChecks] = useState(null);
+  const [lastChecksType, setLastChecksType] = useState('class');
   const [cancelingPaymentId, setCancelingPaymentId] = useState('');
   const [classCodeSearch, setClassCodeSearch] = useState('');
   const fileInputRef = useRef(null);
+  const tutorialPromptedRef = useRef(false);
 
   const userEmail = String(user?.email || '').toLowerCase();
+  const userCourses = useMemo(
+    () =>
+      new Set(
+        (Array.isArray(user?.cursos) ? user.cursos : [])
+          .map((c) => String(c || '').trim().toLowerCase())
+          .filter(Boolean)
+      ),
+    [user?.cursos]
+  );
 
   const pendingClassCodes = useMemo(() => {
     return new Set(
@@ -127,7 +144,9 @@ const PaymentsPage = () => {
           (entry) => String(entry?.student?.email || '').toLowerCase() === userEmail
         );
         const classCode = String(cls.classCode || '').trim();
-        return !studentEntry?.unlocked && !blockedClassCodes.has(classCode);
+        const subjectId = String(cls.subject?.subjectId || '').trim().toLowerCase();
+        const unlockedByCourse = Boolean(subjectId) && userCourses.has(subjectId);
+        return !studentEntry?.unlocked && !unlockedByCourse && !blockedClassCodes.has(classCode);
       })
       .map((cls) => ({
         id: cls.classCode,
@@ -143,7 +162,39 @@ const PaymentsPage = () => {
           return `${tutoredEntry?.student?.name || ''} ${tutoredEntry?.student?.lastName || ''}`.trim();
         })(),
       }));
-  }, [classes, userEmail, blockedClassCodes]);
+  }, [classes, userEmail, userCourses, blockedClassCodes]);
+
+  const availableCoursesToPay = useMemo(() => {
+    return (subjects || [])
+      .filter((subject) => {
+        if (!subject?.isCourse) return false;
+        const courseId = String(subject.subjectId || '').trim().toLowerCase();
+        if (!courseId) return false;
+        return !userCourses.has(courseId) && !blockedClassCodes.has(courseId);
+      })
+      .map((subject) => ({
+        id: subject.subjectId,
+        name: subject.name,
+        code: subject.subjectId,
+        price: Number(subject.price || 0),
+      }));
+  }, [subjects, userCourses, blockedClassCodes]);
+
+  const availableCourseOptions = useMemo(
+    () =>
+      availableCoursesToPay.map((course) => ({
+        value: course.code,
+        label: course.name,
+        description: `Curso completo • ₡${Number(course.price || 0).toLocaleString('es-CR')}`,
+        code: course.code,
+      })),
+    [availableCoursesToPay]
+  );
+
+  const selectedCourseData = useMemo(
+    () => availableCoursesToPay.find((item) => item.code === selectedCourseCode) || null,
+    [availableCoursesToPay, selectedCourseCode]
+  );
 
   const availableClassOptions = useMemo(
     () =>
@@ -182,20 +233,27 @@ const PaymentsPage = () => {
       return undefined;
     }
 
+    if (!tutorialPromptedRef.current && role !== 'admin') {
+      tutorialPromptedRef.current = true;
+      setShowTutorial(true);
+    }
+
     const id = requestAnimationFrame(() => setIsVisible(true));
     return () => cancelAnimationFrame(id);
-  }, [loading]);
+  }, [loading, role]);
 
   useEffect(() => {
     const fetchPayments = async () => {
       try {
-        const [paymentsResponse, classesResponse] = await Promise.all([
+        const [paymentsResponse, classesResponse, subjectsResponse] = await Promise.all([
           api.get('/payments/my'),
           api.get('/classes'),
+          api.get('/subjects'),
         ]);
 
         setPayments(paymentsResponse.data.data || []);
         setClasses(classesResponse.data.data || []);
+        setSubjects(subjectsResponse.data.data || []);
       } catch (_requestError) {
         setError('Error al cargar pagos y clases disponibles.');
       } finally {
@@ -224,11 +282,6 @@ const PaymentsPage = () => {
   }, [location.search, availableClassesToPay]);
 
   const openFileBrowser = () => {
-    if (!tutorialAccepted) {
-      setShowTutorial(true);
-      return;
-    }
-
     fileInputRef.current?.click();
   };
 
@@ -250,25 +303,25 @@ const PaymentsPage = () => {
   };
 
   const handleAcceptTutorial = () => {
-    setTutorialAccepted(true);
     setShowTutorial(false);
-    setTimeout(() => {
-      fileInputRef.current?.click();
-    }, 200);
   };
 
   const handleSubmitPayment = async () => {
-    if (!selectedClassCode || !uploadedFile) return;
+    const isCoursePayment = Boolean(selectedCourseCode);
+    const targetCode = isCoursePayment ? selectedCourseCode : selectedClassCode;
+    if (!targetCode || !uploadedFile) return;
 
     setSubmitting(true);
     setError('');
     setSuccess('');
     setWarning('');
     setLastChecks(null);
+    setLastChecksType(isCoursePayment ? 'course' : 'class');
 
     try {
       const payload = new FormData();
-      payload.append('classCode', selectedClassCode);
+      payload.append('classCode', targetCode);
+      payload.append('paymentType', isCoursePayment ? 'course' : 'class');
       payload.append('bill', uploadedFile);
 
       const response = await api.post('/payments', payload, {
@@ -293,6 +346,7 @@ const PaymentsPage = () => {
         setSuccess(message);
       }
       setSelectedClassCode('');
+      setSelectedCourseCode('');
       setUploadedFile(null);
       if (previewUrl) {
         URL.revokeObjectURL(previewUrl);
@@ -301,6 +355,10 @@ const PaymentsPage = () => {
 
       const classesResponse = await api.get('/classes');
       setClasses(classesResponse.data.data || []);
+
+      if (isCoursePayment && createdPayment?.status === 'aprobado' && typeof checkSessionHealth === 'function') {
+        await checkSessionHealth({ force: true });
+      }
     } catch (requestError) {
       const checks = requestError.response?.data?.errors?.checks || null;
       if (checks) {
@@ -458,6 +516,7 @@ const PaymentsPage = () => {
                       value={selectedClassCode}
                       onChange={(nextValue) => {
                         setSelectedClassCode(nextValue);
+                        setSelectedCourseCode('');
                         setClassCodeSearch('');
                         setError('');
                       }}
@@ -474,6 +533,28 @@ const PaymentsPage = () => {
                     />
                   </div>
 
+                  <div className="space-y-3 pt-2">
+                    <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1 block">
+                      Cursos
+                    </label>
+                    <CustomSelectMenu
+                      value={selectedCourseCode}
+                      onChange={(nextValue) => {
+                        setSelectedCourseCode(nextValue);
+                        setSelectedClassCode('');
+                        setError('');
+                      }}
+                      options={availableCourseOptions}
+                      placeholder={
+                        availableCoursesToPay.length === 0
+                          ? 'No hay cursos disponibles para pagar'
+                          : 'Seleccionar curso'
+                      }
+                      disabled={availableCoursesToPay.length === 0}
+                      buttonClassName="px-6 py-4"
+                    />
+                  </div>
+
                   {rejectedClassCodes.size > 0 ? (
                     <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-xs sm:text-sm font-semibold text-red-700 flex items-start gap-2">
                       <ShieldAlert size={16} className="mt-0.5 shrink-0" />
@@ -484,7 +565,7 @@ const PaymentsPage = () => {
 
                 <div
                   className={`transition-all duration-500 ${
-                    selectedClassData ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'
+                    selectedClassData || selectedCourseData ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'
                   }`}
                 >
                   {selectedClassData ? (
@@ -562,15 +643,56 @@ const PaymentsPage = () => {
                         </div>
                       </div>
                     </div>
+                  ) : selectedCourseData ? (
+                    <div
+                      key={selectedCourseData.code}
+                      className="bg-purple-50/60 rounded-[2.5rem] p-8 border border-purple-100 shadow-sm relative overflow-hidden group animate-[classInfoSwap_280ms_ease-out]"
+                    >
+                      <div className="relative z-10 space-y-5">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-purple-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-purple-200">
+                            <BookOpen size={18} />
+                          </div>
+                          <div>
+                            <span className="text-[10px] font-black text-purple-600/70 uppercase tracking-[0.2em] block leading-none mb-1">
+                              Inscripción a Curso
+                            </span>
+                            <h4 className="text-2xl font-black text-gray-900 leading-none">
+                              {selectedCourseData.name}
+                            </h4>
+                          </div>
+                        </div>
+
+                        <div className="bg-white/70 p-4 rounded-2xl border border-purple-100 space-y-1">
+                          <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest block">
+                            Detalle requerido en el SINPE
+                          </span>
+                          <div className="flex items-center gap-2 text-purple-700 font-black text-sm">
+                            <Hash size={14} />
+                            {selectedCourseData.code}
+                          </div>
+                          <p className="text-xs font-medium text-gray-500">
+                            Coloca exactamente este código en el detalle de tu transferencia SINPE. Al aprobarse se desbloquearán todas las clases del curso.
+                          </p>
+                        </div>
+
+                        <div className="pt-3 flex items-center justify-between border-t border-purple-100">
+                          <span className="text-sm font-bold text-gray-400">Total a pagar:</span>
+                          <span className="text-2xl font-black text-purple-600 tracking-tight">
+                            {Number(selectedCourseData.price || 0).toLocaleString('es-CR')}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
                   ) : null}
                 </div>
 
                 <button
                   type="button"
-                  disabled={!selectedClassCode || !uploadedFile || submitting}
+                  disabled={(!selectedClassCode && !selectedCourseCode) || !uploadedFile || submitting}
                   onClick={handleSubmitPayment}
                   className={`w-full py-5 rounded-[1.5rem] font-black text-xl transition-all flex items-center justify-center gap-3 ${
-                    selectedClassCode && uploadedFile
+                    (selectedClassCode || selectedCourseCode) && uploadedFile
                       ? 'bg-emerald-500 text-white shadow-xl shadow-emerald-200 hover:bg-emerald-600 active:scale-95'
                       : 'bg-gray-100 text-gray-300 cursor-not-allowed'
                   }`}
@@ -603,7 +725,7 @@ const PaymentsPage = () => {
                       Resultado de verificación
                     </p>
                     <div className="space-y-2">
-                      {Object.entries(CHECK_LABELS).map(([key, label]) => {
+                      {Object.entries(lastChecksType === 'course' ? COURSE_CHECK_LABELS : CHECK_LABELS).map(([key, label]) => {
                         const passed = Boolean(lastChecks[key]);
                         return (
                           <div
@@ -642,6 +764,12 @@ const PaymentsPage = () => {
             <div className="space-y-4">
               {payments.map((item) => {
                 const classData = classes.find((cls) => cls.classCode === item.classCode);
+                const subjectCourseData = subjects.find(
+                  (subj) =>
+                    subj.isCourse &&
+                    String(subj.subjectId || '').toLowerCase() === String(item.classCode || '').toLowerCase()
+                );
+                const isCourseItem = item.paymentType === 'course' || (!classData && Boolean(subjectCourseData));
                 const statusTimestamp = item.updatedAt || item.createdAt || item.date;
                 return (
                   <div
@@ -666,7 +794,9 @@ const PaymentsPage = () => {
                         <div>
                           <div className="flex items-center gap-2">
                             <h4 className="font-black text-gray-900 text-lg leading-none">
-                              {classData?.title || item.classCode}
+                              {isCourseItem
+                                ? `Curso: ${subjectCourseData?.name || item.classCode}`
+                                : classData?.title || item.classCode}
                             </h4>
                             {item.status === 'pendiente' ? <AlertTriangle size={16} className="text-amber-500" /> : null}
                             {item.status === 'rechazado' ? <ShieldAlert size={16} className="text-red-500" /> : null}
@@ -726,7 +856,7 @@ const PaymentsPage = () => {
                               <p className="text-gray-700 flex items-center gap-1.5">
                                 <CreditCard size={11} className="text-blue-500" />
                                 {Number.isFinite(item.amount)
-                                  ? `₡${Number(item.amount).toLocaleString('es-CR')}`
+                                  ? `${Number(item.amount).toLocaleString('es-CR')}`
                                   : 'No detectado'}
                               </p>
                             </div>
@@ -763,8 +893,8 @@ const PaymentsPage = () => {
                               <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-2">
                                 Verificación automática
                               </span>
-                              <div className="space-y-2">
-                                {Object.entries(CHECK_LABELS).map(([key, label]) => {
+                                <div className="space-y-2">
+                                {Object.entries(isCourseItem ? COURSE_CHECK_LABELS : CHECK_LABELS).map(([key, label]) => {
                                   const passed = Boolean(item.validationChecks?.[key]);
                                   return (
                                     <div

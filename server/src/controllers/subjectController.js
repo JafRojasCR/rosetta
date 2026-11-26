@@ -1,5 +1,6 @@
 const Joi = require('joi');
 const Subject = require('../models/Subject');
+const Student = require('../models/Student');
 const { success, error } = require('../utils/apiResponse');
 
 // GET /api/subjects
@@ -17,6 +18,8 @@ const createSubject = async (req, res) => {
   const schema = Joi.object({
     subjectId: Joi.string().trim().min(2).max(20).required(),
     name: Joi.string().trim().min(2).max(120).required(),
+    isCourse: Joi.boolean().default(false),
+    price: Joi.number().min(0).default(0),
   });
 
   const { error: validationError, value } = schema.validate(req.body);
@@ -26,6 +29,8 @@ const createSubject = async (req, res) => {
     const normalized = {
       subjectId: value.subjectId.toLowerCase(),
       name: value.name,
+      isCourse: Boolean(value.isCourse),
+      price: value.isCourse ? Number(value.price || 0) : 0,
     };
 
     const exists = await Subject.findOne({ subjectId: normalized.subjectId });
@@ -43,6 +48,8 @@ const updateSubject = async (req, res) => {
   const schema = Joi.object({
     subjectId: Joi.string().trim().min(2).max(20).required(),
     name: Joi.string().trim().min(2).max(120).required(),
+    isCourse: Joi.boolean().optional(),
+    price: Joi.number().min(0).optional(),
   });
 
   const { error: validationError, value } = schema.validate(req.body);
@@ -60,9 +67,25 @@ const updateSubject = async (req, res) => {
       if (duplicated) return error(res, 'Ya existe una materia con ese codigo.', 409);
     }
 
+    const nextIsCourse = value.isCourse !== undefined ? Boolean(value.isCourse) : Boolean(subject.isCourse);
+    const nextPrice = nextIsCourse
+      ? Number(value.price !== undefined ? value.price : subject.price || 0)
+      : 0;
+
     subject.subjectId = nextId;
     subject.name = value.name;
+    subject.isCourse = nextIsCourse;
+    subject.price = nextPrice;
     await subject.save();
+
+    if (!nextIsCourse) {
+      await Student.updateMany({}, { $pull: { cursos: { $in: [currentId, nextId] } } });
+    } else if (nextId !== currentId) {
+      await Student.updateMany(
+        { cursos: currentId },
+        { $set: { 'cursos.$': nextId } }
+      );
+    }
 
     return success(res, subject, 'Materia actualizada exitosamente');
   } catch (err) {
@@ -76,6 +99,8 @@ const deleteSubject = async (req, res) => {
     const subjectId = String(req.params.subjectId || '').toLowerCase();
     const removed = await Subject.findOneAndDelete({ subjectId });
     if (!removed) return error(res, 'Materia no encontrada.', 404);
+
+    await Student.updateMany({}, { $pull: { cursos: subjectId } });
 
     return success(res, null, 'Materia eliminada exitosamente');
   } catch (err) {

@@ -44,6 +44,11 @@ const paymentSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    paymentType: {
+      type: String,
+      enum: ['class', 'course'],
+      default: 'class',
+    },
     amount: {
       type: Number,
       default: null,

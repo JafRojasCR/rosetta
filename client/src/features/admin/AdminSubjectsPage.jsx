@@ -10,6 +10,8 @@ const AdminSubjectsPage = () => {
   const [form, setForm] = useState({
     name: '',
     subjectId: '',
+    isCourse: false,
+    price: '',
   });
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -17,7 +19,7 @@ const AdminSubjectsPage = () => {
   const [success, setSuccess] = useState('');
   const [subjectIdTouched, setSubjectIdTouched] = useState(false);
   const [editingSubjectId, setEditingSubjectId] = useState('');
-  const [editForm, setEditForm] = useState({ name: '', subjectId: '' });
+  const [editForm, setEditForm] = useState({ name: '', subjectId: '', isCourse: false, price: '' });
   const [busySubjectId, setBusySubjectId] = useState('');
 
   useEffect(() => {
@@ -81,14 +83,22 @@ const AdminSubjectsPage = () => {
       return;
     }
 
+    const numericPrice = form.isCourse ? Number(form.price) : 0;
+    if (form.isCourse && (form.price === '' || Number.isNaN(numericPrice) || numericPrice < 0)) {
+      setError('Ingresa un precio valido para el curso.');
+      return;
+    }
+
     setSaving(true);
     try {
       await api.post('/subjects', {
         name: form.name.trim(),
         subjectId: form.subjectId.trim().toLowerCase(),
+        isCourse: Boolean(form.isCourse),
+        price: form.isCourse ? numericPrice : 0,
       });
-      setSuccess('Materia creada correctamente.');
-      setForm({ name: '', subjectId: '' });
+      setSuccess(form.isCourse ? 'Curso creado correctamente.' : 'Materia creada correctamente.');
+      setForm({ name: '', subjectId: '', isCourse: false, price: '' });
       setSubjectIdTouched(false);
       await fetchSubjects();
     } catch (err) {
@@ -105,12 +115,14 @@ const AdminSubjectsPage = () => {
     setEditForm({
       name: subject.name,
       subjectId: subject.subjectId,
+      isCourse: Boolean(subject.isCourse),
+      price: subject.isCourse ? String(subject.price ?? 0) : '',
     });
   };
 
   const cancelEdit = () => {
     setEditingSubjectId('');
-    setEditForm({ name: '', subjectId: '' });
+    setEditForm({ name: '', subjectId: '', isCourse: false, price: '' });
   };
 
   const saveEdit = async (originalSubjectId) => {
@@ -122,15 +134,23 @@ const AdminSubjectsPage = () => {
       return;
     }
 
+    const numericPrice = editForm.isCourse ? Number(editForm.price) : 0;
+    if (editForm.isCourse && (editForm.price === '' || Number.isNaN(numericPrice) || numericPrice < 0)) {
+      setError('Ingresa un precio valido para el curso.');
+      return;
+    }
+
     setBusySubjectId(originalSubjectId);
     try {
       await api.put(`/subjects/${originalSubjectId}`, {
         name: editForm.name.trim(),
         subjectId: editForm.subjectId.trim().toLowerCase(),
+        isCourse: Boolean(editForm.isCourse),
+        price: editForm.isCourse ? numericPrice : 0,
       });
       setSuccess('Materia actualizada correctamente.');
       setEditingSubjectId('');
-      setEditForm({ name: '', subjectId: '' });
+      setEditForm({ name: '', subjectId: '', isCourse: false, price: '' });
       await fetchSubjects();
     } catch (err) {
       setError(err.response?.data?.message || 'No se pudo actualizar la materia.');
@@ -221,6 +241,42 @@ const AdminSubjectsPage = () => {
               placeholder="Codigo"
               className="bg-gray-50 border-transparent border-2 focus:border-purple-500 focus:bg-white rounded-2xl px-5 py-3.5 font-semibold transition-all outline-none lowercase"
             />
+            <div className="sm:col-span-3 flex flex-wrap items-center gap-4 bg-gray-50 rounded-2xl px-5 py-3.5">
+              <label className="inline-flex items-center gap-3 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={form.isCourse}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      isCourse: event.target.checked,
+                      price: event.target.checked ? prev.price : '',
+                    }))
+                  }
+                  className="w-5 h-5 rounded accent-purple-600 cursor-pointer"
+                />
+                <span className="text-sm font-bold text-gray-800">Marcar como Curso</span>
+              </label>
+              {form.isCourse && (
+                <div className="flex items-center gap-2 flex-1 min-w-[180px]">
+                  <span className="text-xs font-black text-gray-500 uppercase tracking-wider">Precio</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={form.price}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        price: event.target.value,
+                      }))
+                    }
+                    placeholder="Ej: 15000"
+                    className="flex-1 bg-white border-transparent border-2 focus:border-purple-500 rounded-xl px-4 py-2 font-semibold outline-none"
+                  />
+                </div>
+              )}
+            </div>
             <div className="sm:col-span-3 flex justify-end">
               <button
                 type="submit"
@@ -254,6 +310,39 @@ const AdminSubjectsPage = () => {
                         }
                         className="w-full bg-white border-transparent border-2 focus:border-purple-500 rounded-xl px-4 py-2.5 font-semibold outline-none"
                       />
+                      <div className="flex flex-wrap items-center gap-3 bg-white rounded-xl px-3 py-2">
+                        <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={editForm.isCourse}
+                            onChange={(event) =>
+                              setEditForm((prev) => ({
+                                ...prev,
+                                isCourse: event.target.checked,
+                                price: event.target.checked ? prev.price : '',
+                              }))
+                            }
+                            className="w-4 h-4 rounded accent-purple-600 cursor-pointer"
+                          />
+                          <span className="text-xs font-bold text-gray-700">Curso</span>
+                        </label>
+                        {editForm.isCourse && (
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={editForm.price}
+                            onChange={(event) =>
+                              setEditForm((prev) => ({
+                                ...prev,
+                                price: event.target.value,
+                              }))
+                            }
+                            placeholder="Precio"
+                            className="flex-1 min-w-[110px] bg-gray-50 border-transparent border-2 focus:border-purple-500 rounded-lg px-3 py-1.5 text-sm font-semibold outline-none"
+                          />
+                        )}
+                      </div>
                       <div className="flex items-center gap-2">
                         <input
                           type="text"
@@ -289,7 +378,14 @@ const AdminSubjectsPage = () => {
                   ) : (
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <p className="text-gray-900 font-bold">{subject.name}</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-gray-900 font-bold">{subject.name}</p>
+                          {subject.isCourse && (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-purple-100 text-purple-700">
+                              Curso · {Number(subject.price || 0).toLocaleString('es-CR')}
+                            </span>
+                          )}
+                        </div>
                         <p className="text-xs uppercase tracking-widest text-gray-400 font-black mt-1">
                           {subject.subjectId}
                         </p>
