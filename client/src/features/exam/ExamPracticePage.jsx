@@ -193,6 +193,8 @@ const ExamPracticePage = () => {
   const [timeElapsed, setTimeElapsed] = useState(0);
   const [cardTransitioning, setCardTransitioning] = useState(false);
   const [showConfirmFinish, setShowConfirmFinish] = useState(false);
+  const [confirmFinishExiting, setConfirmFinishExiting] = useState(false);
+  const [resultExiting, setResultExiting] = useState(false);
 
   useEffect(() => {
     if (loading) {
@@ -320,6 +322,49 @@ const ExamPracticePage = () => {
     }, 220);
   };
 
+  const openFinishConfirmation = () => {
+    setConfirmFinishExiting(false);
+    setShowConfirmFinish(true);
+  };
+
+  const closeFinishConfirmation = (callback) => {
+    if (confirmFinishExiting) return;
+    setConfirmFinishExiting(true);
+    setTimeout(() => {
+      setShowConfirmFinish(false);
+      setConfirmFinishExiting(false);
+      callback?.();
+    }, 220);
+  };
+
+  const leaveResults = (nextStatus) => {
+    if (resultExiting) return;
+    setResultExiting(true);
+    setTimeout(() => {
+      setResultExiting(false);
+      setStatus(nextStatus);
+      if (nextStatus === 'LIST') setSelectedExam(null);
+    }, 320);
+  };
+
+  const returnToExamList = () => {
+    if (isExiting) return;
+    setIsExiting(true);
+    setShowConfirmFinish(false);
+    setTimeout(() => {
+      setIsExiting(false);
+      setStatus('LIST');
+      setSelectedExam(null);
+      setRawQuestions([]);
+      setQuestions([]);
+      setBubbleAnswers({});
+      setDraftAnswers({});
+      setCurrentIndex(0);
+      setTimeElapsed(0);
+      setView('EXAM');
+    }, 320);
+  };
+
   const goToQuestion = (nextIndex) => {
     if (nextIndex < 0 || nextIndex >= questions.length || nextIndex === currentIndex) return;
     setCardTransitioning(true);
@@ -372,7 +417,25 @@ const ExamPracticePage = () => {
       }`}
     >
       <style>
-        {`@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap');`}
+        {`@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap');
+          @keyframes fade-in-up {
+            from { opacity: 0; transform: translateY(16px); }
+            to { opacity: 1; transform: translateY(0); }
+          }
+          @keyframes modal-backdrop-in {
+            from { opacity: 0; }
+            to { opacity: 1; }
+          }
+          @keyframes modal-panel-in {
+            from { opacity: 0; transform: translateY(12px) scale(0.95); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+          }
+          @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+              animation-duration: 0.01ms !important;
+              transition-duration: 0.01ms !important;
+            }
+          }`}
       </style>
 
       {/* Top Navigation */}
@@ -387,6 +450,8 @@ const ExamPracticePage = () => {
                   setStatus('LIST');
                   setSelectedExam(null);
                 }, 300);
+              } else if (status === 'TESTING') {
+                returnToExamList();
               } else {
                 setIsExiting(true);
                 setTimeout(() => navigate('/recursos'), 320);
@@ -928,7 +993,7 @@ const ExamPracticePage = () => {
                 bubbleAnswers={bubbleAnswers}
                 setBubbleAnswers={setBubbleAnswers}
                 setView={setView}
-                onFinish={() => setShowConfirmFinish(true)}
+                onFinish={openFinishConfirmation}
               />
             </div>
           ) : (
@@ -1049,8 +1114,8 @@ const ExamPracticePage = () => {
                   ) : (
                     <button
                       type="button"
-                      onClick={() => setShowConfirmFinish(true)}
-                      className="flex items-center gap-2 px-6 sm:px-8 py-3.5 rounded-2xl font-black text-xs uppercase tracking-widest bg-red-600 text-white hover:bg-red-700 shadow-lg shadow-red-200 transition-all"
+                      onClick={openFinishConfirmation}
+                      className="flex items-center gap-2 px-6 sm:px-8 py-3.5 rounded-2xl font-black text-xs uppercase tracking-widest bg-red-600 text-white hover:bg-red-700 shadow-lg shadow-red-200 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xl active:translate-y-0"
                     >
                       Finalizar y Calificar
                       <ChevronRight size={18} />
@@ -1076,8 +1141,14 @@ const ExamPracticePage = () => {
       {status === 'FINISHED' && (() => {
         const res = calculateResult();
         return (
-          <main className="max-w-4xl w-full mx-auto px-4 sm:px-6 py-8 pb-16 space-y-8">
-            <div className="bg-blue-600 rounded-[2rem] p-8 sm:p-12 text-white text-center shadow-xl shadow-blue-200">
+          <main
+            className={`max-w-4xl w-full mx-auto px-4 sm:px-6 py-8 pb-16 space-y-8 transition-all duration-300 ease-out ${
+              resultExiting
+                ? 'opacity-0 translate-y-4 scale-[0.98]'
+                : 'opacity-100 translate-y-0 scale-100'
+            }`}
+          >
+            <div className="animate-[fade-in-up_420ms_ease-out_both] bg-blue-600 rounded-[2rem] p-8 sm:p-12 text-white text-center shadow-xl shadow-blue-200">
               <p className="uppercase tracking-widest text-xs font-black mb-3 opacity-80">
                 {useUcrScale ? 'Promedio de Admisión Estimado' : 'Calificación Obtenida (0 – 100)'}
               </p>
@@ -1095,7 +1166,7 @@ const ExamPracticePage = () => {
               </div>
             </div>
 
-            <div className="bg-white rounded-[2rem] p-6 sm:p-10 shadow-sm border border-gray-100">
+            <div className="animate-[fade-in-up_420ms_120ms_ease-out_both] bg-white rounded-[2rem] p-6 sm:p-10 shadow-sm border border-gray-100">
               <h3 className="text-xl sm:text-2xl font-black text-gray-900 mb-8 flex items-center gap-3 pb-5 border-b border-gray-100">
                 <FileText className="text-blue-600" />
                 Informe Detallado
@@ -1110,7 +1181,8 @@ const ExamPracticePage = () => {
                   return (
                     <div
                       key={`report-${q._id || idx}`}
-                      className="border-b border-gray-100 pb-10 last:border-0 last:pb-0"
+                      className="animate-[fade-in-up_360ms_ease-out_both] border-b border-gray-100 pb-10 last:border-0 last:pb-0"
+                      style={{ animationDelay: `${Math.min(idx, 8) * 45}ms` }}
                     >
                       <div className="flex items-start gap-4 sm:gap-5 mb-6">
                         <div
@@ -1202,17 +1274,14 @@ const ExamPracticePage = () => {
               <div className="mt-10 pt-8 border-t border-gray-100 flex flex-col sm:flex-row gap-3">
                 <button
                   type="button"
-                  onClick={() => setStatus('IDLE')}
+                  onClick={() => leaveResults('IDLE')}
                   className="flex-1 py-4 px-6 bg-blue-600 hover:bg-blue-700 text-white font-black rounded-2xl shadow-lg shadow-blue-200 transition-all flex items-center justify-center gap-2 text-sm uppercase tracking-wider"
                 >
                   <RotateCcw size={18} /> Repetir Examen
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    setStatus('LIST');
-                    setSelectedExam(null);
-                  }}
+                  onClick={() => leaveResults('LIST')}
                   className="py-4 px-6 bg-gray-100 hover:bg-gray-200 text-gray-700 font-black rounded-2xl transition-all text-sm uppercase tracking-wider"
                 >
                   Elegir Otro
@@ -1227,11 +1296,23 @@ const ExamPracticePage = () => {
       {showConfirmFinish && (
         <div
           onClick={(e) => {
-            if (e.target === e.currentTarget) setShowConfirmFinish(false);
+            if (e.target === e.currentTarget) closeFinishConfirmation();
           }}
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 transition-opacity"
+          className={`fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 transition-all duration-[220ms] ${
+            !confirmFinishExiting ? 'animate-[modal-backdrop-in_220ms_ease-out_both]' : ''
+          } ${
+            confirmFinishExiting ? 'opacity-0' : 'opacity-100'
+          }`}
         >
-          <div className="bg-white max-w-md w-full p-8 rounded-[2rem] shadow-2xl border border-gray-100 text-center space-y-5">
+          <div
+            className={`bg-white max-w-md w-full p-8 rounded-[2rem] shadow-2xl border border-gray-100 text-center space-y-5 transition-all duration-[220ms] ${
+              !confirmFinishExiting ? 'animate-[modal-panel-in_220ms_ease-out_both]' : ''
+            } ${
+              confirmFinishExiting
+                ? 'opacity-0 scale-95 translate-y-3'
+                : 'opacity-100 scale-100 translate-y-0'
+            }`}
+          >
             <div className="w-16 h-16 rounded-2xl bg-amber-50 text-amber-500 flex items-center justify-center mx-auto">
               <AlertTriangle size={34} />
             </div>
@@ -1258,17 +1339,19 @@ const ExamPracticePage = () => {
             <div className="flex flex-col gap-2.5 pt-2">
               <button
                 type="button"
-                onClick={() => {
-                  setStatus('FINISHED');
-                  setShowConfirmFinish(false);
-                }}
+                onClick={() =>
+                  closeFinishConfirmation(() => {
+                    setResultExiting(false);
+                    setStatus('FINISHED');
+                  })
+                }
                 className="w-full py-3.5 bg-red-600 hover:bg-red-700 text-white font-black rounded-2xl tracking-wider uppercase text-xs shadow-lg shadow-red-200 transition-all"
               >
                 Sí, entregar ahora
               </button>
               <button
                 type="button"
-                onClick={() => setShowConfirmFinish(false)}
+                onClick={() => closeFinishConfirmation()}
                 className="w-full py-3.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-2xl tracking-wider uppercase text-xs transition-all"
               >
                 Volver a revisar
