@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { createPortal } from 'react-dom';
 import {
   AlertCircle,
   AlertTriangle,
@@ -95,6 +96,8 @@ const PaymentsPage = () => {
   const [subjects, setSubjects] = useState([]);
   const [payments, setPayments] = useState([]);
   const [success, setSuccess] = useState('');
+  const [showCoursePurchasePopup, setShowCoursePurchasePopup] = useState(false);
+  const [closingCoursePurchasePopup, setClosingCoursePurchasePopup] = useState(false);
   const [warning, setWarning] = useState('');
   const [error, setError] = useState('');
   const [lastChecks, setLastChecks] = useState(null);
@@ -103,6 +106,21 @@ const PaymentsPage = () => {
   const [classCodeSearch, setClassCodeSearch] = useState('');
   const fileInputRef = useRef(null);
   const tutorialPromptedRef = useRef(false);
+  const coursePopupCloseTimerRef = useRef(null);
+
+  const closeCoursePurchasePopup = () => {
+    if (closingCoursePurchasePopup) return;
+    setClosingCoursePurchasePopup(true);
+    coursePopupCloseTimerRef.current = setTimeout(() => {
+      setShowCoursePurchasePopup(false);
+      setClosingCoursePurchasePopup(false);
+      coursePopupCloseTimerRef.current = null;
+    }, 180);
+  };
+
+  useEffect(() => () => {
+    if (coursePopupCloseTimerRef.current) clearTimeout(coursePopupCloseTimerRef.current);
+  }, []);
 
   const userEmail = String(user?.email || '').toLowerCase();
   const userCourses = useMemo(
@@ -340,7 +358,10 @@ const PaymentsPage = () => {
         setPayments((prev) => [createdPayment, ...prev]);
       }
 
-      if (createdPayment?.status === 'pendiente') {
+      if (isCoursePayment && createdPayment?.status === 'aprobado') {
+        setShowCoursePurchasePopup(true);
+        setSuccess('');
+      } else if (createdPayment?.status === 'pendiente') {
         setWarning(message);
       } else {
         setSuccess(message);
@@ -1002,6 +1023,42 @@ const PaymentsPage = () => {
         </div>
       ) : null}
 
+      {showCoursePurchasePopup && typeof document !== 'undefined'
+        ? createPortal(
+            <div
+              className={`fixed inset-0 z-[100] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm ${closingCoursePurchasePopup ? 'animate-out' : 'animate-in fade-in duration-300'}`}
+              onClick={closeCoursePurchasePopup}
+              role="presentation"
+            >
+              <section
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="course-purchase-title"
+                className={`relative w-full max-w-lg overflow-hidden rounded-[2.5rem] border border-emerald-100 bg-white p-8 text-center shadow-2xl sm:p-10 ${closingCoursePurchasePopup ? 'course-popup-out' : 'course-popup-in'}`}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-[1.5rem] bg-emerald-500 text-white shadow-xl shadow-emerald-200">
+                  <CheckCircle2 size={34} />
+                </div>
+                <h2 id="course-purchase-title" className="text-2xl font-black tracking-tight text-gray-900 sm:text-3xl">
+                  ¡Gracias por adquirir el curso!
+                </h2>
+                <p className="mt-4 text-base font-medium leading-relaxed text-gray-600">
+                  Pronto recibirás un mensaje o correo confirmando tu inscripción.
+                </p>
+                <button
+                  type="button"
+                  onClick={closeCoursePurchasePopup}
+                  className="mt-8 w-full rounded-2xl bg-emerald-500 py-4 text-base font-black text-white shadow-lg shadow-emerald-100 transition-all hover:bg-emerald-600 active:scale-95"
+                >
+                  Entendido
+                </button>
+              </section>
+            </div>,
+            document.body
+          )
+        : null}
+
       <footer className="py-4 sm:py-6 text-center text-gray-400 text-xs sm:text-sm border-t border-gray-100 bg-white/60 mt-auto">
         © 2026 Rosetta - Plataforma de Aula Virtual
       </footer>
@@ -1013,6 +1070,11 @@ const PaymentsPage = () => {
         .fade-in { animation-name: fade-in; }
         .zoom-in-95 { animation-name: zoom-in-95; }
         .slide-in-from-top-2 { animation-name: slide-in-top; }
+        .animate-out { animation: fade-in 0.18s ease-in reverse both; }
+        .course-popup-in { animation: modalPop 0.22s ease-out both; }
+        .course-popup-out { animation: modalOut 0.18s ease-in both; }
+        @keyframes modalPop { from { transform: scale(0.96) translateY(8px); opacity: 0; } to { transform: scale(1) translateY(0); opacity: 1; } }
+        @keyframes modalOut { from { transform: scale(1); opacity: 1; } to { transform: scale(0.96) translateY(8px); opacity: 0; } }
         @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
         @keyframes zoom-in-95 { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
         @keyframes slide-in-top { from { transform: translateY(-0.5rem); opacity: 0; } to { transform: translateY(0); opacity: 1; } }

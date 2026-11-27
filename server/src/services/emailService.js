@@ -641,7 +641,7 @@ const sendApprovedPaymentNotificationEmail = async ({
 
   return sendMail({
     to,
-    subject: 'Rosetta | Pago aprobado',
+    subject: 'Rosetta | CURSO ADQUIRIDO',
     html,
   });
 };
