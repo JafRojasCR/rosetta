@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Mail, Phone, Search, Trash2, Users } from 'lucide-react';
+import { ArrowLeft, Mail, Phone, Plus, Search, Trash2, Users, X } from 'lucide-react';
 import api from '../../services/api';
 import LoadingSpinner from '../../components/LoadingSpinner';
 
@@ -19,11 +19,14 @@ const AdminUsersPage = () => {
   const navigate = useNavigate();
   const [isVisible, setIsVisible] = useState(false);
   const [students, setStudents] = useState([]);
+  const [courseSubjects, setCourseSubjects] = useState([]);
+  const [selectedCourseByEmail, setSelectedCourseByEmail] = useState({});
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [busyEmail, setBusyEmail] = useState('');
+  const [updatingCoursesEmail, setUpdatingCoursesEmail] = useState('');
 
   useEffect(() => {
     if (loading) {
@@ -40,8 +43,13 @@ const AdminUsersPage = () => {
     setError('');
 
     try {
-      const response = await api.get('/admin/students');
-      setStudents(response.data.data || []);
+      const [studentsResponse, subjectsResponse] = await Promise.all([
+        api.get('/admin/students'),
+        api.get('/subjects'),
+      ]);
+      setStudents(studentsResponse.data.data || []);
+      const allSubjects = subjectsResponse.data.data || [];
+      setCourseSubjects(allSubjects.filter((s) => Boolean(s?.isCourse)));
     } catch (_requestError) {
       setError('No se pudieron cargar los estudiantes.');
     } finally {
@@ -90,6 +98,76 @@ const AdminUsersPage = () => {
     } finally {
       setBusyEmail('');
     }
+  };
+
+  const courseNameById = useMemo(() => {
+    return (courseSubjects || []).reduce((acc, subj) => {
+      const id = String(subj?.subjectId || '').trim().toLowerCase();
+      if (id) acc[id] = subj.name || id;
+      return acc;
+    }, {});
+  }, [courseSubjects]);
+
+  const handleUpdateStudentCourses = async (studentEmail, nextCursos, successMsg) => {
+    setUpdatingCoursesEmail(studentEmail);
+    setError('');
+    setSuccess('');
+
+    try {
+      const response = await api.put(`/admin/students/${encodeURIComponent(studentEmail)}`, {
+        cursos: nextCursos,
+      });
+      const updatedStudent = response.data?.data;
+      if (updatedStudent) {
+        setStudents((prev) =>
+          prev.map((entry) => (entry.email === studentEmail ? updatedStudent : entry))
+        );
+      }
+      setSuccess(successMsg);
+    } catch (requestError) {
+      setError(
+        requestError.response?.data?.message || 'No se pudieron actualizar los cursos del estudiante.'
+      );
+    } finally {
+      setUpdatingCoursesEmail('');
+    }
+  };
+
+  const handleAddCourseToStudent = async (student) => {
+    const currentCursos = Array.isArray(student.cursos)
+      ? student.cursos.map((c) => String(c || '').trim().toLowerCase()).filter(Boolean)
+      : [];
+    const available = courseSubjects.filter(
+      (subj) => !currentCursos.includes(String(subj.subjectId || '').trim().toLowerCase())
+    );
+    const chosenId =
+      selectedCourseByEmail[student.email] ||
+      String(available[0]?.subjectId || '').trim().toLowerCase();
+
+    if (!chosenId) return;
+    if (currentCursos.includes(chosenId)) return;
+
+    const nextCursos = [...currentCursos, chosenId];
+    await handleUpdateStudentCourses(
+      student.email,
+      nextCursos,
+      `Curso "${courseNameById[chosenId] || chosenId}" asignado a ${student.email}.`
+    );
+    setSelectedCourseByEmail((prev) => ({ ...prev, [student.email]: '' }));
+  };
+
+  const handleRemoveCourseFromStudent = async (student, courseIdToRemove) => {
+    const normalizedRemove = String(courseIdToRemove || '').trim().toLowerCase();
+    const currentCursos = Array.isArray(student.cursos)
+      ? student.cursos.map((c) => String(c || '').trim().toLowerCase()).filter(Boolean)
+      : [];
+    const nextCursos = currentCursos.filter((c) => c !== normalizedRemove);
+
+    await handleUpdateStudentCourses(
+      student.email,
+      nextCursos,
+      `Curso "${courseNameById[normalizedRemove] || normalizedRemove}" removido de ${student.email}.`
+    );
   };
 
   if (loading) return <LoadingSpinner />;
@@ -206,16 +284,77 @@ const AdminUsersPage = () => {
                     </div>
                     {Array.isArray(student.cursos) && student.cursos.length > 0 && (
                       <div className="pt-1 flex flex-wrap gap-1.5">
-                        {student.cursos.map((courseId) => (
-                          <span
-                            key={`${student.email}-${courseId}`}
-                            className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-purple-50 text-purple-700 border border-purple-100"
-                          >
-                            Curso: {courseId}
-                          </span>
-                        ))}
+                        {student.cursos.map((courseId) => {
+                          const normalizedId = String(courseId || '').trim().toLowerCase();
+                          const label = courseNameById[normalizedId] || normalizedId;
+                          return (
+                            <span
+                              key={`${student.email}-${normalizedId}`}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-purple-50 text-purple-700 border border-purple-100"
+                            >
+                              <span>{label}</span>
+                              <button
+                                type="button"
+                                disabled={updatingCoursesEmail === student.email}
+                                onClick={() => handleRemoveCourseFromStudent(student, normalizedId)}
+                                className="hover:text-red-600 disabled:opacity-50 transition-colors"
+                                title="Quitar curso"
+                              >
+                                <X size={12} />
+                              </button>
+                            </span>
+                          );
+                        })}
                       </div>
                     )}
+
+                    {(() => {
+                      const currentCursos = new Set(
+                        (Array.isArray(student.cursos) ? student.cursos : [])
+                          .map((c) => String(c || '').trim().toLowerCase())
+                          .filter(Boolean)
+                      );
+                      const availableCourses = courseSubjects.filter(
+                        (subj) => !currentCursos.has(String(subj.subjectId || '').trim().toLowerCase())
+                      );
+                      if (availableCourses.length === 0) return null;
+
+                      const selectedVal =
+                        selectedCourseByEmail[student.email] ||
+                        String(availableCourses[0]?.subjectId || '').trim().toLowerCase();
+
+                      return (
+                        <div className="pt-2 flex items-center gap-2">
+                          <select
+                            value={selectedVal}
+                            onChange={(e) =>
+                              setSelectedCourseByEmail((prev) => ({
+                                ...prev,
+                                [student.email]: e.target.value,
+                              }))
+                            }
+                            disabled={updatingCoursesEmail === student.email}
+                            className="flex-1 min-w-0 bg-gray-50 border border-gray-200 rounded-xl px-3 py-1.5 text-xs font-semibold text-gray-700 outline-none focus:border-purple-500"
+                          >
+                            {availableCourses.map((subj) => (
+                              <option key={subj.subjectId} value={subj.subjectId}>
+                                {subj.name} ({subj.subjectId})
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => handleAddCourseToStudent(student)}
+                            disabled={updatingCoursesEmail === student.email}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-black disabled:opacity-60 transition-colors shrink-0"
+                            title="Añadir curso"
+                          >
+                            <Plus size={14} />
+                            Añadir
+                          </button>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </article>
               );

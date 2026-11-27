@@ -7,6 +7,7 @@ import {
   Clock,
   Download,
   ExternalLink,
+  Lock,
   PlayCircle,
   Search,
 } from 'lucide-react';
@@ -14,6 +15,7 @@ import api from '../../services/api';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import CustomVideoPlayer from '../../components/CustomVideoPlayer';
 import FloatingExamButton from '../../components/FloatingExamButton';
+import useAuth from '../../hooks/useAuth';
 
 const DOCUMENT_THUMB =
   'https://images.unsplash.com/photo-1544640808-32ca72ac7f37?q=80&w=600&auto=format&fit=crop';
@@ -47,6 +49,7 @@ const buildResource = (doc) => {
     title: doc?.title || 'Recurso sin titulo',
     description: String(doc?.description || '').trim(),
     type,
+    subjectId: String(doc?.subject?.subjectId || '').trim().toLowerCase(),
     category: doc?.subject?.name || 'General',
     author: doc?.author || doc?.teacher || doc?.createdBy || 'Equipo Rosetta',
     duration: doc?.duration || (type === 'pdf' ? 'Documento PDF' : 'Video'),
@@ -58,8 +61,22 @@ const buildResource = (doc) => {
 
 const DocumentsPage = () => {
   const navigate = useNavigate();
+  const { user, role } = useAuth();
+  const isAdmin = String(role || user?.role || '').toLowerCase() === 'admin';
+  const userCourses = useMemo(
+    () =>
+      new Set(
+        (Array.isArray(user?.cursos) ? user.cursos : [])
+          .map((c) => String(c || '').trim().toLowerCase())
+          .filter(Boolean)
+      ),
+    [user?.cursos]
+  );
+  const hasAnyCourse = isAdmin || userCourses.size > 0;
+
   const [isVisible, setIsVisible] = useState(false);
   const [documents, setDocuments] = useState([]);
+  const [subjects, setSubjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [filter, setFilter] = useState('all');
@@ -93,8 +110,12 @@ const DocumentsPage = () => {
   useEffect(() => {
     const fetchDocuments = async () => {
       try {
-        const response = await api.get('/documents');
-        setDocuments(response.data.data || []);
+        const [docsResponse, subjectsResponse] = await Promise.all([
+          api.get('/documents'),
+          api.get('/subjects'),
+        ]);
+        setDocuments(docsResponse.data.data || []);
+        setSubjects(subjectsResponse.data.data || []);
       } catch (err) {
         setError('Error al cargar los recursos');
       } finally {
@@ -121,7 +142,30 @@ const DocumentsPage = () => {
     };
   }, []);
 
-  const resources = useMemo(() => documents.map(buildResource), [documents]);
+  const subjectsById = useMemo(() => {
+    return (subjects || []).reduce((acc, subj) => {
+      const id = String(subj?.subjectId || '').trim().toLowerCase();
+      if (id) acc[id] = subj;
+      return acc;
+    }, {});
+  }, [subjects]);
+
+  const resources = useMemo(
+    () =>
+      documents.map((doc) => {
+        const base = buildResource(doc);
+        const subj = base.subjectId ? subjectsById[base.subjectId] : null;
+        const isCourseResource = Boolean(subj?.isCourse);
+        const isLocked = !isAdmin && isCourseResource && !userCourses.has(base.subjectId);
+        return {
+          ...base,
+          isCourseResource,
+          isLocked,
+          courseName: subj?.name || base.category,
+        };
+      }),
+    [documents, subjectsById, isAdmin, userCourses]
+  );
 
   const filteredResources = resources.filter((res) => {
     const matchesFilter = filter === 'all' || res.type === filter;
@@ -157,7 +201,7 @@ const DocumentsPage = () => {
   };
 
   const openViewer = async (resource) => {
-    if (!resource?.fileUrl) return;
+    if (!resource?.fileUrl || resource?.isLocked) return;
 
     setViewerOpen(true);
     setViewerLoading(true);
@@ -335,18 +379,32 @@ const DocumentsPage = () => {
             <div
               key={res.id}
               onClick={() => openViewer(res)}
-              className={`group bg-white rounded-[2.5rem] overflow-hidden border border-gray-100 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col sm:flex-row h-full ${
-                res.fileUrl ? 'cursor-pointer' : 'cursor-default'
+              className={`group rounded-[2.5rem] overflow-hidden border transition-all duration-300 flex flex-col sm:flex-row h-full ${
+                res.isLocked
+                  ? 'bg-gray-50 border-gray-200 opacity-80 cursor-not-allowed'
+                  : `bg-white border-gray-100 shadow-sm hover:shadow-xl hover:-translate-y-1 ${
+                      res.fileUrl ? 'cursor-pointer' : 'cursor-default'
+                    }`
               }`}
             >
               <div className="relative w-full sm:w-56 h-48 sm:h-auto overflow-hidden flex-shrink-0">
                 <img
                   src={res.thumbnail}
                   alt={res.title}
-                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                  className={`w-full h-full object-cover transition-transform duration-500 ${
+                    res.isLocked ? 'grayscale contrast-75' : 'group-hover:scale-110'
+                  }`}
                 />
-                <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition-colors flex items-center justify-center">
-                  {res.type === 'video' ? (
+                <div
+                  className={`absolute inset-0 flex items-center justify-center transition-colors ${
+                    res.isLocked ? 'bg-gray-900/50' : 'bg-black/20 group-hover:bg-black/40'
+                  }`}
+                >
+                  {res.isLocked ? (
+                    <div className="w-14 h-14 rounded-2xl bg-white/90 text-gray-700 flex items-center justify-center shadow-lg">
+                      <Lock size={28} />
+                    </div>
+                  ) : res.type === 'video' ? (
                     <PlayCircle
                       className="text-white opacity-0 group-hover:opacity-100 transform scale-75 group-hover:scale-100 transition-all duration-300"
                       size={60}
@@ -361,7 +419,11 @@ const DocumentsPage = () => {
                 <div className="absolute top-4 left-4">
                   <span
                     className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-white ${
-                      res.type === 'video' ? 'bg-red-500' : 'bg-blue-600'
+                      res.isLocked
+                        ? 'bg-gray-600'
+                        : res.type === 'video'
+                        ? 'bg-red-500'
+                        : 'bg-blue-600'
                     }`}
                   >
                     {res.type}
@@ -371,22 +433,41 @@ const DocumentsPage = () => {
 
               <div className="p-8 flex flex-col justify-between flex-grow">
                 <div>
-                  <span className="text-blue-600 text-xs font-black uppercase tracking-widest mb-2 block">
+                  <span
+                    className={`text-xs font-black uppercase tracking-widest mb-2 block ${
+                      res.isLocked ? 'text-gray-500' : 'text-blue-600'
+                    }`}
+                  >
                     {res.category}
                   </span>
-                  <h3 className="text-xl font-extrabold text-gray-900 leading-tight mb-2 group-hover:text-blue-600 transition-colors">
+                  <h3
+                    className={`text-xl font-extrabold leading-tight mb-2 transition-colors ${
+                      res.isLocked
+                        ? 'text-gray-600'
+                        : 'text-gray-900 group-hover:text-blue-600'
+                    }`}
+                  >
                     {res.title}
                   </h3>
                   <p className="text-gray-400 text-sm font-medium mb-4">Por {res.author}</p>
 
-                  <div className="flex items-center gap-4 text-gray-400 mb-6">
-                    <div className="flex items-center gap-1.5 text-xs font-bold">
-                      <Clock size={14} />
-                      {res.duration}
+                  {res.isLocked ? (
+                    <div className="mb-5 rounded-2xl bg-gray-200/70 border border-gray-300/70 px-3.5 py-2.5 flex items-start gap-2 text-xs font-bold text-gray-600">
+                      <Lock size={14} className="shrink-0 mt-0.5 text-gray-500" />
+                      <span>
+                        Adquiere el curso "{res.courseName}" para desbloquear este recurso.
+                      </span>
                     </div>
-                    <div className="w-1 h-1 bg-gray-200 rounded-full" />
-                    <div className="text-xs font-bold">{res.date}</div>
-                  </div>
+                  ) : (
+                    <div className="flex items-center gap-4 text-gray-400 mb-6">
+                      <div className="flex items-center gap-1.5 text-xs font-bold">
+                        <Clock size={14} />
+                        {res.duration}
+                      </div>
+                      <div className="w-1 h-1 bg-gray-200 rounded-full" />
+                      <div className="text-xs font-bold">{res.date}</div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-3">
@@ -402,7 +483,7 @@ const DocumentsPage = () => {
                     
                   </button>
 
-                  {res.fileUrl ? (
+                  {res.fileUrl && !res.isLocked ? (
                     <button
                       type="button"
                       onClick={async (event) => {
@@ -430,8 +511,8 @@ const DocumentsPage = () => {
                       disabled
                       className="w-full bg-gray-100 text-gray-400 font-black py-3 px-4 rounded-xl transition-all flex items-center justify-center gap-2 cursor-not-allowed"
                     >
-                      <Download size={18} />
-                      <span>Descargar</span>
+                      {res.isLocked ? <Lock size={16} /> : <Download size={18} />}
+                      <span>{res.isLocked ? 'Bloqueado' : 'Descargar'}</span>
                     </button>
                   )}
                 </div>
@@ -581,7 +662,10 @@ const DocumentsPage = () => {
         </div>
       )}
 
-      <FloatingExamButton onClick={() => navigate('/practica-examen')} />
+      <FloatingExamButton
+        locked={!hasAnyCourse}
+        onClick={() => navigate('/practica-examen')}
+      />
 
       <footer className="py-4 sm:py-6 text-center text-gray-400 text-xs sm:text-sm border-t border-gray-100 bg-white/60 mt-auto">
         © 2026 Rosetta - Plataforma de Aula Virtual

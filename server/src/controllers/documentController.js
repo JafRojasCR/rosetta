@@ -1,4 +1,6 @@
 const Document = require('../models/Document');
+const Subject = require('../models/Subject');
+const Student = require('../models/Student');
 const { success, error } = require('../utils/apiResponse');
 const Joi = require('joi');
 const jwt = require('jsonwebtoken');
@@ -197,6 +199,25 @@ const buildDocumentAccessApiUrl = (docId, mode = 'download') =>
     mode
   )}`;
 
+const canUserAccessDocument = async (doc, reqUser) => {
+  if (!doc) return false;
+  if (reqUser?.role === 'admin') return true;
+
+  const subjectId = String(doc?.subject?.subjectId || '').trim().toLowerCase();
+  if (!subjectId) return true;
+
+  const courseSubject = await Subject.findOne({ subjectId, isCourse: true }).select('_id').lean();
+  if (!courseSubject) return true;
+
+  const email = String(reqUser?.email || '').trim().toLowerCase();
+  if (!email) return false;
+
+  const student = await Student.findOne({ email }).select('cursos').lean();
+  if (!student || !Array.isArray(student.cursos)) return false;
+
+  return student.cursos.some((c) => String(c || '').trim().toLowerCase() === subjectId);
+};
+
 // GET /api/documents
 const getDocuments = async (req, res) => {
   try {
@@ -237,6 +258,11 @@ const getDocumentEmbedToken = async (req, res) => {
   try {
     const doc = await Document.findOne({ docId: req.params.docId });
     if (!doc) return error(res, 'Documento no encontrado.', 404);
+
+    const allowed = await canUserAccessDocument(doc, req.user);
+    if (!allowed) {
+      return error(res, 'Debes adquirir este curso para acceder al recurso.', 403);
+    }
 
     if (String(doc.type || '').toLowerCase() !== 'video') {
       return error(res, 'El visualizador de video solo aplica a recursos de video.', 400);
@@ -349,6 +375,11 @@ const getDocumentAccessUrl = async (req, res) => {
 
     const doc = await Document.findOne({ docId: req.params.docId });
     if (!doc) return error(res, 'Documento no encontrado.', 404);
+
+    const allowed = await canUserAccessDocument(doc, req.user);
+    if (!allowed) {
+      return error(res, 'Debes adquirir este curso para acceder al recurso.', 403);
+    }
 
     if (isGcsDocument(doc)) {
       const signed = await getSignedDownloadUrl({

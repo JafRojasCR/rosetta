@@ -26,12 +26,14 @@ import AdminSubjectsPage from '../features/admin/AdminSubjectsPage';
 import AdminQuestionsPage from '../features/admin/AdminQuestionsPage';
 import SettingsPage from '../features/settings/SettingsPage';
 import ProfilePage from '../features/profile/ProfilePage';
+import CourseInfoPage from '../features/course/CourseInfoPage';
 import NotFoundPage from '../features/not-found/NotFoundPage';
 
 const AppRouter = () => {
   return (
     <Routes>
       {/* Rutas públicas */}
+      <Route path="/curso" element={<CourseInfoPage />} />
       <Route
         path="/login"
         element={
