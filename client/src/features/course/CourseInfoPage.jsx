@@ -325,7 +325,7 @@ const CourseInfoPage = () => {
                 className="w-28 h-28 sm:w-36 sm:h-36 object-contain drop-shadow-[0_12px_32px_rgba(59,130,246,0.35)]"
               />
               <h1 className="text-4xl sm:text-6xl font-extrabold text-white tracking-tight leading-tight">
-                ¿Quieres entrar a la <span className="text-blue-400">U</span>?
+                ¿Quieres entrar a la <span className="text-blue-400">U Pública</span>?
               </h1>
               <div className="w-16 h-1.5 rounded-full bg-blue-500/80" />
             </div>
@@ -783,7 +783,7 @@ const CourseInfoPage = () => {
         <section className="bg-slate-900 text-white rounded-[2.5rem] p-8 sm:p-12 shadow-xl flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="space-y-2 text-center md:text-left">
             <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-              ¿Listo para dar el siguiente paso hacia la <span className="text-blue-500">universidad pública</span>?
+              ¿Listo para dar el siguiente paso hacia la <span className="text-blue-500">Universidad Pública</span>?
             </h2>
             <p className="text-sm sm:text-base text-gray-300 font-medium">
               Sigue la guía de matrícula y comienza tu preparación con Rosetta.
